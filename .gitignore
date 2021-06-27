@@ -1,0 +1,11 @@
+*.sln
+.vs
+Properties
+.mono
+*.old
+*.user
+obj
+bin
+Content/bin
+Content/obj
+*.mgcontent
