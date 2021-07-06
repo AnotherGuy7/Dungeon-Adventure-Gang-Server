@@ -1,4 +1,5 @@
-﻿using Lidgren.Network;
+﻿using DAGServer.Data;
+using Lidgren.Network;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -13,9 +14,10 @@ namespace DAGServer
         public const int MaximumLobbySize = 4;
 
         public static NetServer mainServer;
+        public static Dictionary<int, ClientData> clientData = new Dictionary<int, ClientData>();
         public static Dictionary<int, PlayerData> playerData = new Dictionary<int, PlayerData>();
 
-        public static void CreateNewServer()
+        public void CreateNewServer()
         {
             Logger.Info("Creating Server...");
             NetPeerConfiguration config = new NetPeerConfiguration(ConfigurationApplicationName);
@@ -25,7 +27,7 @@ namespace DAGServer
             Logger.Info("Server created.");
         }
 
-        public static void SearchForMessages(NetPeer peer)
+        public void SearchForMessages(NetPeer peer)
         {
             NetIncomingMessage message = peer.ReadMessage();
 
@@ -55,7 +57,7 @@ namespace DAGServer
             }
         }
 
-        public static void HandleDataMessages(NetIncomingMessage message)
+        public void HandleDataMessages(NetIncomingMessage message)
         {
             ServerPacket.ClientPacketType messageDataType = (ServerPacket.ClientPacketType)message.ReadByte();
             int sender = message.ReadInt32();
@@ -65,6 +67,18 @@ namespace DAGServer
             {
                 case ServerPacket.ClientPacketType.RequestID:       //Gives the peer who requested it an ID
                     HandleIDRequest(message, sender);
+                    break;
+
+                case ServerPacket.ClientPacketType.SendClientInfo:
+                    HandleNewClientInfo(message, sender);
+                    break;
+
+                case ServerPacket.ClientPacketType.SendClientCharacterType:
+                    HandleClientCharacterType(message, sender);
+                    break;
+
+                case ServerPacket.ClientPacketType.RequestAllClientData:
+                    HandleAllClientsDataRequest(message, sender);
                     break;
 
                 case ServerPacket.ClientPacketType.RequestAllPlayerData:        //Returns the data of all current players in the game.
@@ -79,9 +93,9 @@ namespace DAGServer
                     HandleClientPositionInformation(message, sender);
                     break;
 
-                case ServerPacket.ClientPacketType.SendPlayerInfo:      //Send the peer's player information to all peers that aren't the sender
+                /*case ServerPacket.ClientPacketType.SendPlayerInfo:      //Send the peer's player information to all peers that aren't the sender
                     HandlePlayerInfo(message, sender);
-                    break;
+                    break;*/
 
                 case ServerPacket.ClientPacketType.SendSound:
                     HandleSentSoundData(message, sender);
@@ -90,12 +104,24 @@ namespace DAGServer
                 case ServerPacket.ClientPacketType.SendStringMessageToOtherPlayers:
                     HandleSentMessage(message, sender);
                     break;
+
+                case ServerPacket.ClientPacketType.SendNewObjectInfo:
+                    HandleNewObjectInfo(message, sender);
+                    break;
+
+                case ServerPacket.ClientPacketType.SendObjectPosition:
+                    HandleSentObjectPosition(message, sender);
+                    break;
+
+                case ServerPacket.ClientPacketType.SendObjectData:
+                    HandleSentObjectData(message, sender);
+                    break;
             }
         }
 
-        public static void HandleIDRequest(NetIncomingMessage message, int sender)
+        public void HandleIDRequest(NetIncomingMessage message, int sender)
         {
-            int givenID = playerData.Count + 1;
+            int givenID = clientData.Count + 1;
 
             NetOutgoingMessage clientIDMessage = mainServer.CreateMessage();
             clientIDMessage.Write((byte)ServerPacket.ServerPacketType.GiveID);
@@ -105,7 +131,79 @@ namespace DAGServer
             mainServer.SendMessage(clientIDMessage, message.SenderConnection, NetDeliveryMethod.ReliableOrdered);
         }
 
-        public static void HandleAllPlayersDataRequest(NetIncomingMessage message, int sender)
+        public void HandleNewClientInfo(NetIncomingMessage message, int sender)
+        {
+            int clientID = sender;
+            string clientName = message.ReadString();
+
+            ClientData newClientData = new ClientData();
+            newClientData.clientID = clientID;
+            newClientData.clientName = clientName;
+            clientData.Add(clientID, newClientData);
+
+
+            if (mainServer.Connections.Count < 2)
+                return;
+
+
+            NetOutgoingMessage clientInfoMessage = mainServer.CreateMessage();
+            clientInfoMessage.Write((byte)ServerPacket.ServerPacketType.GiveClientInfo);
+            clientInfoMessage.Write(sender);
+            clientInfoMessage.Write(clientID);
+            clientInfoMessage.Write(clientName);
+
+            List<NetConnection> otherConnectionsList = mainServer.Connections;
+            otherConnectionsList.Remove(message.SenderConnection);
+            if (otherConnectionsList.Count >= 1)
+            {
+                mainServer.SendMessage(clientInfoMessage, otherConnectionsList, NetDeliveryMethod.ReliableOrdered, 0);
+            }
+        }
+
+        public void HandleClientCharacterType(NetIncomingMessage message, int sender)
+        {
+            int clientID = sender;
+            int clientCharacterType = message.ReadInt32();
+
+            clientData[clientID].chosenCharacterType = clientCharacterType;
+
+
+            if (mainServer.Connections.Count < 2)
+                return;
+
+
+            NetOutgoingMessage clientCharacterTypeMessage = mainServer.CreateMessage();
+            clientCharacterTypeMessage.Write((byte)ServerPacket.ServerPacketType.GiveClientCharacterType);
+            clientCharacterTypeMessage.Write(sender);
+            clientCharacterTypeMessage.Write(clientID);
+            clientCharacterTypeMessage.Write(clientCharacterType);
+
+            List<NetConnection> otherConnectionsList = mainServer.Connections;
+            otherConnectionsList.Remove(message.SenderConnection);
+            if (otherConnectionsList.Count >= 1)
+            {
+                mainServer.SendMessage(clientCharacterTypeMessage, otherConnectionsList, NetDeliveryMethod.ReliableOrdered, 0);
+            }
+        }
+
+        public void HandleAllClientsDataRequest(NetIncomingMessage message, int sender)
+        {
+            NetOutgoingMessage clientDataMessage = mainServer.CreateMessage();
+            clientDataMessage.Write((byte)ServerPacket.ServerPacketType.GiveAllClientData);
+            clientDataMessage.Write(sender);
+            clientDataMessage.Write(clientData.Count);
+
+            ClientData[] clientDataArray = clientData.Values.ToArray();
+            for (int i = 0; i < clientDataArray.Length; i++)        //The data has to be read by index cause we don't know how many players there are
+            {
+                clientDataMessage.Write(clientDataArray[i].clientID);
+                clientDataMessage.Write(clientDataArray[i].clientName);
+            }
+
+            mainServer.SendMessage(clientDataMessage, message.SenderConnection, NetDeliveryMethod.ReliableOrdered);
+        }
+
+        public void HandleAllPlayersDataRequest(NetIncomingMessage message, int sender)
         {
             NetOutgoingMessage playerDataMessage = mainServer.CreateMessage();
             playerDataMessage.Write((byte)ServerPacket.ServerPacketType.GiveAllPlayerData);
@@ -123,7 +221,7 @@ namespace DAGServer
             mainServer.SendMessage(playerDataMessage, message.SenderConnection, NetDeliveryMethod.ReliableOrdered);
         }
 
-        public static void HandlePlayerDataDeletionRequest(NetIncomingMessage message, int sender)
+        public void HandlePlayerDataDeletionRequest(NetIncomingMessage message, int sender)
         {
             NetOutgoingMessage playerDataDeletionMessage = mainServer.CreateMessage();
             playerDataDeletionMessage.Write((byte)ServerPacket.ServerPacketType.GivePlayerDataDeletion);
@@ -150,7 +248,7 @@ namespace DAGServer
                 mainServer.SendMessage(playerDataDeletionMessage, otherConnectionsList, NetDeliveryMethod.ReliableOrdered, 0);
         }
 
-        public static void HandleClientPositionInformation(NetIncomingMessage message, int sender)
+        public void HandleClientPositionInformation(NetIncomingMessage message, int sender)
         {
             float x = message.ReadFloat();
             float y = message.ReadFloat();
@@ -169,7 +267,7 @@ namespace DAGServer
                 mainServer.SendMessage(playerPositionMessage, otherConnectionsList, NetDeliveryMethod.ReliableOrdered, 0);
         }
 
-        public static void HandlePlayerInfo(NetIncomingMessage message, int sender)
+        /*public void HandlePlayerInfo(NetIncomingMessage message, int sender)
         {
             PlayerData newPlayerData = new PlayerData();
             string playerName = message.ReadString();
@@ -199,9 +297,9 @@ namespace DAGServer
             {
                 mainServer.SendMessage(playerInfoMessage, otherConnectionsList, NetDeliveryMethod.ReliableOrdered, 0);
             }
-        }
+        }*/
 
-        public static void HandleSentSoundData(NetIncomingMessage message, int sender)
+        public void HandleSentSoundData(NetIncomingMessage message, int sender)
         {
             int soundType = message.ReadInt32();
             float soundPosX = message.ReadFloat();
@@ -224,7 +322,7 @@ namespace DAGServer
             }
         }
 
-        public static void HandleSentMessage(NetIncomingMessage message, int sender)
+        public void HandleSentMessage(NetIncomingMessage message, int sender)
         {
             string playerMessage = message.ReadString();
 
@@ -241,7 +339,7 @@ namespace DAGServer
             }
         }
 
-        public static void HandleWorldData(NetIncomingMessage message, int sender)
+        public void HandleWorldData(NetIncomingMessage message, int sender)
         {
             NetOutgoingMessage worldDataMessage = mainServer.CreateMessage();
             worldDataMessage.Data = message.Data;
@@ -252,6 +350,55 @@ namespace DAGServer
             if (otherConnectionsList.Count >= 1)
             {
                 mainServer.SendMessage(worldDataMessage, otherConnectionsList, NetDeliveryMethod.ReliableOrdered, 0);
+            }
+        }
+
+        public void HandleNewObjectInfo(NetIncomingMessage message, int sender)
+        {
+            NetOutgoingMessage neOobjectDataMessage = mainServer.CreateMessage();
+            neOobjectDataMessage.Data = message.Data;
+            neOobjectDataMessage.Data[0] = ((byte)ServerPacket.ServerPacketType.SendNewObjectInfo);
+
+            List<NetConnection> otherConnectionsList = mainServer.Connections;
+            otherConnectionsList.Remove(message.SenderConnection);
+            if (otherConnectionsList.Count >= 1)
+            {
+                mainServer.SendMessage(neOobjectDataMessage, otherConnectionsList, NetDeliveryMethod.ReliableOrdered, 0);
+            }
+        }
+
+        public void HandleSentObjectPosition(NetIncomingMessage message, int sender)
+        {
+            int objectIndex = message.ReadInt32();
+            float posX = message.ReadFloat();
+            float posY = message.ReadFloat();
+
+            NetOutgoingMessage objectPositionMessage = mainServer.CreateMessage();
+            objectPositionMessage.Write((byte)ServerPacket.ServerPacketType.SendObjectPosition);
+            objectPositionMessage.Write(sender);
+            objectPositionMessage.Write(objectIndex);
+            objectPositionMessage.Write(posX);
+            objectPositionMessage.Write(posY);
+
+            List<NetConnection> otherConnectionsList = mainServer.Connections;
+            otherConnectionsList.Remove(message.SenderConnection);
+            if (otherConnectionsList.Count >= 1)
+            {
+                mainServer.SendMessage(objectPositionMessage, otherConnectionsList, NetDeliveryMethod.ReliableOrdered, 0);
+            }
+        }
+
+        public void HandleSentObjectData(NetIncomingMessage message, int sender)
+        {
+            NetOutgoingMessage objectDataMessage = mainServer.CreateMessage();
+            objectDataMessage.Data = message.Data;
+            objectDataMessage.Data[0] = ((byte)ServerPacket.ServerPacketType.SendObjectData);
+
+            List<NetConnection> otherConnectionsList = mainServer.Connections;
+            otherConnectionsList.Remove(message.SenderConnection);
+            if (otherConnectionsList.Count >= 1)
+            {
+                mainServer.SendMessage(objectDataMessage, otherConnectionsList, NetDeliveryMethod.ReliableOrdered, 0);
             }
         }
     }

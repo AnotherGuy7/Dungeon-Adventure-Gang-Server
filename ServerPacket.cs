@@ -7,25 +7,35 @@ namespace DAGServer
         public enum ServerPacketType        //Packets that the server sends
         {
             GiveID,
+            GiveClientInfo,
+            GiveClientCharacterType,
+            GiveAllClientData,
             GiveAllPlayerData,
             GivePlayerDataDeletion,
             GiveClientPositon,
-            GivePlayerInfo,
             PlaySound,
             GiveStringMessageToOtherPlayers,
-            SendWorldArrayToAll
+            SendWorldArrayToAll,
+            SendNewObjectInfo,
+            SendObjectPosition,
+            SendObjectData
         }
 
         public enum ClientPacketType        //Packets that the clients send
         {
             RequestID,
+            SendClientInfo,
+            SendClientCharacterType,
+            RequestAllClientData,
             RequestAllPlayerData,
             RequestPlayerDataDeletion,
             SendClientPosition,
-            SendPlayerInfo,
             SendSound,
             SendStringMessageToOtherPlayers,
-            SendWorldArray
+            SendWorldArray,
+            SendNewObjectInfo,
+            SendObjectPosition,
+            SendObjectData
         }
     }
 }

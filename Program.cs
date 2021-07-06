@@ -1,15 +1,15 @@
-﻿using Lidgren.Network;
-using System;
-
-namespace DAGServer
+﻿namespace DAGServer
 {
     public class Program
     {
+        public static Server dagServer;
+
         public static void Main(string[] args)
         {
-            Server.CreateNewServer();
+            dagServer = new Server();
+            dagServer.CreateNewServer();
             while (true)
-                Server.SearchForMessages(Server.mainServer);
+                dagServer.SearchForMessages(Server.mainServer);
 
         }
     }

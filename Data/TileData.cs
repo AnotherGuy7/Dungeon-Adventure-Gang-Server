@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using System.Text;
 
-namespace DAGServer
+namespace DAGServer.Data
 {
     public class TileData
     {
