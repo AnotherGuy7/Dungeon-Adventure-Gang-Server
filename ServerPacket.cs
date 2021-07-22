@@ -18,7 +18,8 @@ namespace DAGServer
             SendWorldArrayToAll,
             SendNewObjectInfo,
             SendObjectPosition,
-            SendObjectData
+            SendObjectData,
+            SendAllPlayerSpawnDataToOthers
         }
 
         public enum ClientPacketType        //Packets that the clients send
@@ -35,7 +36,8 @@ namespace DAGServer
             SendWorldArray,
             SendNewObjectInfo,
             SendObjectPosition,
-            SendObjectData
+            SendObjectData,
+            SendAllPlayerSpawnData
         }
     }
 }
