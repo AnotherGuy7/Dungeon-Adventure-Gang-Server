@@ -19,6 +19,7 @@ namespace DAGServer
             SendNewObjectInfo,
             SendObjectPosition,
             SendObjectData,
+            SendOtherPlayerDoneLoading,
             SendAllPlayerSpawnDataToOthers
         }
 
@@ -37,6 +38,7 @@ namespace DAGServer
             SendNewObjectInfo,
             SendObjectPosition,
             SendObjectData,
+            SendDoneLoading,
             SendAllPlayerSpawnData
         }
     }

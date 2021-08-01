@@ -22,6 +22,7 @@ namespace DAGServer
             Logger.Info("Creating Server...");
             NetPeerConfiguration config = new NetPeerConfiguration(ConfigurationApplicationName);
             config.Port = NetworkPort;
+            config.MaximumConnections = 4;
             mainServer = new NetServer(config);
             mainServer.Start();
             Logger.Info("Server created.");
@@ -119,6 +120,10 @@ namespace DAGServer
 
                 case ServerPacket.ClientPacketType.SendObjectData:
                     HandleSentObjectData(message, sender);
+                    break;
+
+                case ServerPacket.ClientPacketType.SendDoneLoading:
+                    HandleReceivedDoneLoading(message, sender);
                     break;
 
                 case ServerPacket.ClientPacketType.SendAllPlayerSpawnData:
@@ -320,17 +325,65 @@ namespace DAGServer
         public void HandleWorldData(NetIncomingMessage message, int sender)
         {
             NetOutgoingMessage worldDataMessage = mainServer.CreateMessage();
-            worldDataMessage.Data = message.Data;
-            worldDataMessage.Data[0] = ((byte)ServerPacket.ServerPacketType.SendWorldArrayToAll);
+            /*worldDataMessage.Data = message.Data;
+            worldDataMessage.Data[0] = (byte)ServerPacket.ServerPacketType.SendWorldArrayToAll;*/       //Doesn't work for some reason
 
-            SendMessageToAllOthers(worldDataMessage, message.SenderConnection);
+            /*worldDataMessage.Data = new byte[message.Data.Length];
+            message.Data.CopyTo(worldDataMessage.Data, 0);
+            worldDataMessage.Data[0] = (byte)ServerPacket.ServerPacketType.SendWorldArrayToAll;
+            worldDataMessage.Data[1] = Convert.ToByte(sender); */
+
+             worldDataMessage.Write((byte)ServerPacket.ServerPacketType.SendWorldArrayToAll);
+             worldDataMessage.Write(sender);
+             for (int x = 0; x < 400; x++)
+             {
+                 for (int y = 0; y < 400; y++)
+                 {
+                     byte tileType = message.ReadByte();
+                     byte textureType = message.ReadByte();
+
+                     worldDataMessage.Write(tileType);
+                     worldDataMessage.Write(textureType);
+                 }
+             }
+
+             SendMessageToAllOthers(worldDataMessage, message.SenderConnection);
         }
 
         public void HandleNewObjectInfo(NetIncomingMessage message, int sender)
         {
+            int bodyType = message.ReadInt32();
+            int objectType = message.ReadInt32();
+            int objectIndex = message.ReadInt32();
+            float posX = message.ReadFloat();
+            float posY = message.ReadFloat();
+            /*int objectInfoLength = 0;
+            byte[] objectInfo = null;
+            int objectExtraInfoLength = 0;
+            byte[] objectExtraInfo = null;
+            if (bodyType == 1)
+            {
+                objectInfoLength = message.ReadInt32();
+                objectInfo = message.ReadBytes(objectInfoLength);
+                objectExtraInfoLength = message.ReadInt32();
+                objectExtraInfo = message.ReadBytes(objectExtraInfoLength);
+            }*/
+
             NetOutgoingMessage newObjectDataMessage = mainServer.CreateMessage();
-            newObjectDataMessage.Data = message.Data;
-            newObjectDataMessage.Data[0] = ((byte)ServerPacket.ServerPacketType.SendNewObjectInfo);
+            newObjectDataMessage.Write((byte)ServerPacket.ServerPacketType.SendNewObjectInfo);
+            newObjectDataMessage.Write(sender);
+            newObjectDataMessage.Write(bodyType);
+            newObjectDataMessage.Write(objectType);
+            newObjectDataMessage.Write(objectIndex);
+            newObjectDataMessage.Write(posX);
+            newObjectDataMessage.Write(posY);
+            /*if (bodyType == 1)
+            {
+                message.Write(objectInfoLength);
+                message.Write(objectInfo);
+                message.Write(objectExtraInfoLength);
+                message.Write(objectExtraInfo);
+            }*/
 
             SendMessageToAllOthers(newObjectDataMessage, message.SenderConnection);
         }
@@ -360,11 +413,32 @@ namespace DAGServer
             SendMessageToAllOthers(objectDataMessage, message.SenderConnection);
         }
 
+        public void HandleReceivedDoneLoading(NetIncomingMessage message, int sender)
+        {
+            NetOutgoingMessage doneLoadingMessage = mainServer.CreateMessage();
+            doneLoadingMessage.Write((byte)ServerPacket.ServerPacketType.SendOtherPlayerDoneLoading);
+            doneLoadingMessage.Write(sender);
+
+            SendMessageToAllOthers(doneLoadingMessage, message.SenderConnection);
+        }
+
         public void HandleReceivedPlayerSpawnData(NetIncomingMessage message, int sender)
         {
             NetOutgoingMessage spawnDataMessage = mainServer.CreateMessage();
-            spawnDataMessage.Data = message.Data;
-            spawnDataMessage.Data[0] = (byte)ServerPacket.ServerPacketType.SendAllPlayerSpawnDataToOthers;
+            spawnDataMessage.Write((byte)ServerPacket.ServerPacketType.SendAllPlayerSpawnDataToOthers);
+            spawnDataMessage.Write(sender);
+
+            int amountOfPlayers = message.ReadInt32();
+            spawnDataMessage.Write(amountOfPlayers);
+
+            for (int i = 0; i < amountOfPlayers; i++)
+            {
+                float playerPosX = message.ReadFloat();
+                float playerPosY = message.ReadFloat();
+
+                spawnDataMessage.Write(playerPosX);
+                spawnDataMessage.Write(playerPosY);
+            }
 
             SendMessageToAllOthers(spawnDataMessage, message.SenderConnection);
         }
@@ -385,3 +459,34 @@ namespace DAGServer
         }
     }
 }
+/*
+ * [7/25/2021 11:34:37 PM]: Creating Server...
+[7/25/2021 11:34:37 PM]: Server created.
+[7/25/2021 11:34:37 PM]: Debug Packet received: Socket bound to 0.0.0.0:11223: True
+[7/25/2021 11:34:37 PM]: Debug Packet received: Network thread started
+[7/25/2021 11:35:01 PM]: New connection.
+[7/25/2021 11:35:01 PM]: Debug Packet received: Initiated average roundtrip time to 4.97 ms Remote time is: 0.5725502217941276
+[7/25/2021 11:35:02 PM]: RequestID
+[7/25/2021 11:35:02 PM]: RequestAllClientData
+[7/25/2021 11:35:02 PM]: SendClientInfo
+[7/25/2021 11:35:04 PM]: New connection.
+[7/25/2021 11:35:04 PM]: Debug Packet received: Initiated average roundtrip time to 8.80 ms Remote time is: 0.5210223876838711
+[7/25/2021 11:35:05 PM]: RequestID
+[7/25/2021 11:35:05 PM]: RequestAllClientData
+[7/25/2021 11:35:05 PM]: SendClientInfo
+[7/25/2021 11:35:09 PM]: SendClientCharacterType
+[7/25/2021 11:35:10 PM]: SendClientCharacterType
+[7/25/2021 11:35:24 PM]: SendWorldArray
+[7/25/2021 11:35:38 PM]: SendAllPlayerSpawnData
+[7/25/2021 11:35:38 PM]: SendDoneLoading
+[7/25/2021 11:35:40 PM]: SendDoneLoading
+[7/25/2021 11:35:46 PM]: SendNewObjectInfo
+Unhandled exception. System.ArgumentNullException: Value cannot be null. (Parameter 'target')
+   at Lidgren.Network.NetBuffer.ReadAllProperties(Object target, BindingFlags flags) in C:\Users\AnotherGuy\Downloads\Projects - Monogame\Dungeon Adventure Gang\Libraries\lidgren-network-gen3-master\lidgren-network-gen3-master\Lidgren.Network\NetBuffer.Read.Reflection.cs:line 80
+   at Lidgren.Network.NetBuffer.ReadAllProperties(Object target) in C:\Users\AnotherGuy\Downloads\Projects - Monogame\Dungeon Adventure Gang\Libraries\lidgren-network-gen3-master\lidgren-network-gen3-master\Lidgren.Network\NetBuffer.Read.Reflection.cs:line 69
+   at DAGServer.Server.HandleNewObjectInfo(NetIncomingMessage message, Int32 sender) in C:\Users\AnotherGuy\Downloads\Projects - Monogame\Dungeon Adventure Gang Server\Server.cs:line 358
+   at DAGServer.Server.HandleDataMessages(NetIncomingMessage message) in C:\Users\AnotherGuy\Downloads\Projects - Monogame\Dungeon Adventure Gang Server\Server.cs:line 113
+   at DAGServer.Server.SearchForMessages(NetPeer peer) in C:\Users\AnotherGuy\Downloads\Projects - Monogame\Dungeon Adventure Gang Server\Server.cs:line 49
+   at DAGServer.Program.Main(String[] args) in C:\Users\AnotherGuy\Downloads\Projects - Monogame\Dungeon Adventure Gang Server\Program.cs:line 12
+
+ */
