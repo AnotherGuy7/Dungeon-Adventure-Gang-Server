@@ -1,8 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
-
-namespace DAGServer.Data
+﻿namespace DAGServer.Data
 {
     public class ClientData
     {

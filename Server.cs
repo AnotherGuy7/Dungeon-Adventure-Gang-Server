@@ -1,6 +1,5 @@
 ﻿using DAGServer.Data;
 using Lidgren.Network;
-using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -25,7 +24,7 @@ namespace DAGServer
             config.MaximumConnections = 4;
             mainServer = new NetServer(config);
             mainServer.Start();
-            Logger.Info("Server created.");
+            Logger.Info("Server created at: " + NetworkIP + " (Port: " + NetworkPort + ")");
         }
 
         public void SearchForMessages(NetPeer peer)
@@ -129,6 +128,10 @@ namespace DAGServer
                 case ServerPacket.ClientPacketType.SendAllPlayerSpawnData:
                     HandleReceivedPlayerSpawnData(message, sender);
                     break;
+
+                case ServerPacket.ClientPacketType.SendPlayerState:
+                    HandleReceivedPlayerState(message, sender);
+                    break;
             }
         }
 
@@ -174,7 +177,6 @@ namespace DAGServer
             int clientCharacterType = message.ReadInt32();
 
             clientData[clientID].chosenCharacterType = clientCharacterType;
-
 
             if (mainServer.Connections.Count < 2)
                 return;
@@ -443,6 +445,18 @@ namespace DAGServer
             SendMessageToAllOthers(spawnDataMessage, message.SenderConnection);
         }
 
+        public void HandleReceivedPlayerState(NetIncomingMessage message, int sender)
+        {
+            NetOutgoingMessage playerStateMessage = mainServer.CreateMessage();
+            playerStateMessage.Write((byte)ServerPacket.ServerPacketType.SendOtherPlayerState);
+            playerStateMessage.Write(sender);
+
+            byte playerState = message.ReadByte();
+            playerStateMessage.Write(playerState);
+
+            SendMessageToAllOthers(playerStateMessage, message.SenderConnection);
+        }
+
         public static void SendMessageToAllOthers(NetOutgoingMessage message, NetConnection senderConnection)
         {
             List<NetConnection> otherConnectionsList = mainServer.Connections;
@@ -457,36 +471,6 @@ namespace DAGServer
         {
             mainServer.SendMessage(message, senderConnection, NetDeliveryMethod.ReliableOrdered);
         }
+
     }
 }
-/*
- * [7/25/2021 11:34:37 PM]: Creating Server...
-[7/25/2021 11:34:37 PM]: Server created.
-[7/25/2021 11:34:37 PM]: Debug Packet received: Socket bound to 0.0.0.0:11223: True
-[7/25/2021 11:34:37 PM]: Debug Packet received: Network thread started
-[7/25/2021 11:35:01 PM]: New connection.
-[7/25/2021 11:35:01 PM]: Debug Packet received: Initiated average roundtrip time to 4.97 ms Remote time is: 0.5725502217941276
-[7/25/2021 11:35:02 PM]: RequestID
-[7/25/2021 11:35:02 PM]: RequestAllClientData
-[7/25/2021 11:35:02 PM]: SendClientInfo
-[7/25/2021 11:35:04 PM]: New connection.
-[7/25/2021 11:35:04 PM]: Debug Packet received: Initiated average roundtrip time to 8.80 ms Remote time is: 0.5210223876838711
-[7/25/2021 11:35:05 PM]: RequestID
-[7/25/2021 11:35:05 PM]: RequestAllClientData
-[7/25/2021 11:35:05 PM]: SendClientInfo
-[7/25/2021 11:35:09 PM]: SendClientCharacterType
-[7/25/2021 11:35:10 PM]: SendClientCharacterType
-[7/25/2021 11:35:24 PM]: SendWorldArray
-[7/25/2021 11:35:38 PM]: SendAllPlayerSpawnData
-[7/25/2021 11:35:38 PM]: SendDoneLoading
-[7/25/2021 11:35:40 PM]: SendDoneLoading
-[7/25/2021 11:35:46 PM]: SendNewObjectInfo
-Unhandled exception. System.ArgumentNullException: Value cannot be null. (Parameter 'target')
-   at Lidgren.Network.NetBuffer.ReadAllProperties(Object target, BindingFlags flags) in C:\Users\AnotherGuy\Downloads\Projects - Monogame\Dungeon Adventure Gang\Libraries\lidgren-network-gen3-master\lidgren-network-gen3-master\Lidgren.Network\NetBuffer.Read.Reflection.cs:line 80
-   at Lidgren.Network.NetBuffer.ReadAllProperties(Object target) in C:\Users\AnotherGuy\Downloads\Projects - Monogame\Dungeon Adventure Gang\Libraries\lidgren-network-gen3-master\lidgren-network-gen3-master\Lidgren.Network\NetBuffer.Read.Reflection.cs:line 69
-   at DAGServer.Server.HandleNewObjectInfo(NetIncomingMessage message, Int32 sender) in C:\Users\AnotherGuy\Downloads\Projects - Monogame\Dungeon Adventure Gang Server\Server.cs:line 358
-   at DAGServer.Server.HandleDataMessages(NetIncomingMessage message) in C:\Users\AnotherGuy\Downloads\Projects - Monogame\Dungeon Adventure Gang Server\Server.cs:line 113
-   at DAGServer.Server.SearchForMessages(NetPeer peer) in C:\Users\AnotherGuy\Downloads\Projects - Monogame\Dungeon Adventure Gang Server\Server.cs:line 49
-   at DAGServer.Program.Main(String[] args) in C:\Users\AnotherGuy\Downloads\Projects - Monogame\Dungeon Adventure Gang Server\Program.cs:line 12
-
- */
