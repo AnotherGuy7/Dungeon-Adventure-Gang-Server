@@ -113,12 +113,16 @@ namespace DAGServer
                     HandleNewObjectInfo(message, sender);
                     break;
 
-                case ServerPacket.ClientPacketType.SendObjectPosition:
-                    HandleSentObjectPosition(message, sender);
+                case ServerPacket.ClientPacketType.SendEnemyVariableData:
+                    HandleSentEnemyVariableData(message, sender);
                     break;
 
-                case ServerPacket.ClientPacketType.SendObjectData:
-                    HandleSentObjectData(message, sender);
+                case ServerPacket.ClientPacketType.SendProjectileVariableData:
+                    HandleSentProjectileVariableData(message, sender);
+                    break;
+
+                case ServerPacket.ClientPacketType.SendPlayerUsedItem:
+                    HandlePlayerItemUsage(message, sender);
                     break;
 
                 case ServerPacket.ClientPacketType.SendDoneLoading:
@@ -390,29 +394,62 @@ namespace DAGServer
             SendMessageToAllOthers(newObjectDataMessage, message.SenderConnection);
         }
 
-        public void HandleSentObjectPosition(NetIncomingMessage message, int sender)
+        public void HandleSentEnemyVariableData(NetIncomingMessage message, int sender)
         {
             int objectIndex = message.ReadInt32();
-            float posX = message.ReadFloat();
-            float posY = message.ReadFloat();
+            byte variableIndex = message.ReadByte();
+            int value1 = message.ReadInt32();
+            int value2 = message.ReadInt32();
+            int value3 = message.ReadInt32();
 
-            NetOutgoingMessage objectPositionMessage = mainServer.CreateMessage();
-            objectPositionMessage.Write((byte)ServerPacket.ServerPacketType.SendObjectPosition);
-            objectPositionMessage.Write(sender);
-            objectPositionMessage.Write(objectIndex);
-            objectPositionMessage.Write(posX);
-            objectPositionMessage.Write(posY);
+            NetOutgoingMessage enemyDataMessage = mainServer.CreateMessage();
+            enemyDataMessage.Write((byte)ServerPacket.ServerPacketType.SendProjectileVariableData);
+            enemyDataMessage.Write(sender);
+            enemyDataMessage.Write(objectIndex);
+            enemyDataMessage.Write(variableIndex);
+            enemyDataMessage.Write(value1);
+            enemyDataMessage.Write(value2);
+            enemyDataMessage.Write(value3);
 
-            SendMessageToAllOthers(objectPositionMessage, message.SenderConnection);
+            SendMessageToAllOthers(enemyDataMessage, message.SenderConnection);
         }
 
-        public void HandleSentObjectData(NetIncomingMessage message, int sender)
+        public void HandleSentProjectileVariableData(NetIncomingMessage message, int sender)
         {
-            NetOutgoingMessage objectDataMessage = mainServer.CreateMessage();
-            objectDataMessage.Data = message.Data;
-            objectDataMessage.Data[0] = ((byte)ServerPacket.ServerPacketType.SendObjectData);
+            int objectIndex = message.ReadInt32();
+            byte variableIndex = message.ReadByte();
+            int value1 = message.ReadInt32();
+            int value2 = message.ReadInt32();
+            int value3 = message.ReadInt32();
 
-            SendMessageToAllOthers(objectDataMessage, message.SenderConnection);
+            NetOutgoingMessage projectileDataMessage = mainServer.CreateMessage();
+            projectileDataMessage.Write((byte)ServerPacket.ServerPacketType.SendProjectileVariableData);
+            projectileDataMessage.Write(sender);
+            projectileDataMessage.Write(objectIndex);
+            projectileDataMessage.Write(variableIndex);
+            projectileDataMessage.Write(value1);
+            projectileDataMessage.Write(value2);
+            projectileDataMessage.Write(value3);
+
+            SendMessageToAllOthers(projectileDataMessage, message.SenderConnection);
+        }
+
+        public void HandlePlayerItemUsage(NetIncomingMessage message, int sender)
+        {
+            byte itemType = message.ReadByte();
+            int emulatedMousePosX = message.ReadInt32();
+            int emulatedMousePosY = message.ReadInt32();
+            bool secondaryUse = message.ReadBoolean();
+
+            NetOutgoingMessage itemUsageMessage = mainServer.CreateMessage();
+            itemUsageMessage.Write((byte)ServerPacket.ServerPacketType.SendPlayerUsedItem);
+            itemUsageMessage.Write(sender);
+            itemUsageMessage.Write(itemType);
+            itemUsageMessage.Write(emulatedMousePosX);
+            itemUsageMessage.Write(emulatedMousePosY);
+            itemUsageMessage.Write(secondaryUse);
+
+            SendMessageToAllOthers(itemUsageMessage, message.SenderConnection);
         }
 
         public void HandleReceivedDoneLoading(NetIncomingMessage message, int sender)

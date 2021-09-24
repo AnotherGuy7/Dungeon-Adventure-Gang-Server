@@ -17,8 +17,9 @@ namespace DAGServer
             GiveStringMessageToOtherPlayers,
             SendWorldArrayToAll,
             SendNewObjectInfo,
-            SendObjectPosition,
-            SendObjectData,
+            SendEnemyVariableData,
+            SendProjectileVariableData,
+            SendPlayerUsedItem,
             SendOtherPlayerDoneLoading,
             SendAllPlayerSpawnDataToOthers,
             SendOtherPlayerState
@@ -37,8 +38,9 @@ namespace DAGServer
             SendStringMessageToOtherPlayers,
             SendWorldArray,
             SendNewObjectInfo,
-            SendObjectPosition,
-            SendObjectData,
+            SendEnemyVariableData,
+            SendProjectileVariableData,
+            SendPlayerUsedItem,
             SendDoneLoading,
             SendAllPlayerSpawnData,
             SendPlayerState
