@@ -16,13 +16,15 @@ namespace DAGServer
             PlaySound,
             GiveStringMessageToOtherPlayers,
             SendWorldArrayToAll,
-            SendNewObjectInfo,
+            SendNewEnemyInfo,
+            SendNewProjectileInfo,
             SendEnemyVariableData,
             SendProjectileVariableData,
             SendPlayerUsedItem,
             SendOtherPlayerDoneLoading,
             SendAllPlayerSpawnDataToOthers,
-            SendOtherPlayerState
+            SendOtherPlayerState,
+            SendNewItemCreation
         }
 
         public enum ClientPacketType        //Packets that the clients send
@@ -37,13 +39,15 @@ namespace DAGServer
             SendSound,
             SendStringMessageToOtherPlayers,
             SendWorldArray,
-            SendNewObjectInfo,
+            SendNewEnemyInfo,
+            SendNewProjectileInfo,
             SendEnemyVariableData,
             SendProjectileVariableData,
             SendPlayerUsedItem,
             SendDoneLoading,
             SendAllPlayerSpawnData,
-            SendPlayerState
+            SendPlayerState,
+            SendNewItemCreation
         }
     }
 }

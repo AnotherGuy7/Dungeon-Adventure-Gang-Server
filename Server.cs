@@ -16,12 +16,17 @@ namespace DAGServer
         public static Dictionary<int, ClientData> clientData = new Dictionary<int, ClientData>();
         public static Dictionary<int, PlayerData> playerData = new Dictionary<int, PlayerData>();
 
+        public static int[] gameProjectileExists = new int[1000];
+
         public void CreateNewServer()
         {
             Logger.Info("Creating Server...");
-            NetPeerConfiguration config = new NetPeerConfiguration(ConfigurationApplicationName);
-            config.Port = NetworkPort;
-            config.MaximumConnections = 4;
+            NetPeerConfiguration config = new NetPeerConfiguration(ConfigurationApplicationName)
+            {
+                Port = NetworkPort,
+                MaximumConnections = 4
+            };
+
             mainServer = new NetServer(config);
             mainServer.Start();
             Logger.Info("Server created at: " + NetworkIP + " (Port: " + NetworkPort + ")");
@@ -109,12 +114,16 @@ namespace DAGServer
                     HandleWorldData(message, sender);
                     break;
 
-                case ServerPacket.ClientPacketType.SendNewObjectInfo:
-                    HandleNewObjectInfo(message, sender);
+                case ServerPacket.ClientPacketType.SendNewEnemyInfo:
+                    HandleNewEnemyInfo(message, sender);
                     break;
 
                 case ServerPacket.ClientPacketType.SendEnemyVariableData:
                     HandleSentEnemyVariableData(message, sender);
+                    break;
+
+                case ServerPacket.ClientPacketType.SendNewProjectileInfo:
+                    HandleNewProjectileInfo(message, sender);
                     break;
 
                 case ServerPacket.ClientPacketType.SendProjectileVariableData:
@@ -135,6 +144,10 @@ namespace DAGServer
 
                 case ServerPacket.ClientPacketType.SendPlayerState:
                     HandleReceivedPlayerState(message, sender);
+                    break;
+
+                case ServerPacket.ClientPacketType.SendNewItemCreation:
+                    HandleReceivedItemCreation(message, sender);
                     break;
             }
         }
@@ -303,6 +316,8 @@ namespace DAGServer
             float soundPosX = message.ReadFloat();
             float soundPosY = message.ReadFloat();
             float soundTravelDistance = message.ReadFloat();
+            float soundPitch = message.ReadFloat();
+            float soundVolume = message.ReadFloat();
 
             NetOutgoingMessage soundInfoMessage = mainServer.CreateMessage();
             soundInfoMessage.Write((byte)ServerPacket.ServerPacketType.PlaySound);
@@ -310,7 +325,10 @@ namespace DAGServer
             soundInfoMessage.Write(soundType);
             soundInfoMessage.Write(soundPosX);
             soundInfoMessage.Write(soundPosY);
+            soundInfoMessage.Write(soundPitch);
+            soundInfoMessage.Write(soundVolume);
             soundInfoMessage.Write(soundTravelDistance);
+
 
             SendMessageToAllOthers(soundInfoMessage, message.SenderConnection);
 
@@ -339,11 +357,17 @@ namespace DAGServer
             worldDataMessage.Data[0] = (byte)ServerPacket.ServerPacketType.SendWorldArrayToAll;
             worldDataMessage.Data[1] = Convert.ToByte(sender); */
 
-             worldDataMessage.Write((byte)ServerPacket.ServerPacketType.SendWorldArrayToAll);
-             worldDataMessage.Write(sender);
-             for (int x = 0; x < 400; x++)
+            worldDataMessage.Write((byte)ServerPacket.ServerPacketType.SendWorldArrayToAll);
+            worldDataMessage.Write(sender);
+
+            int width = message.ReadInt32();
+            int height = message.ReadInt32();
+            worldDataMessage.Write(width);
+            worldDataMessage.Write(height);
+
+             for (int x = 0; x < width; x++)
              {
-                 for (int y = 0; y < 400; y++)
+                 for (int y = 0; y < height; y++)
                  {
                      byte tileType = message.ReadByte();
                      byte textureType = message.ReadByte();
@@ -352,17 +376,37 @@ namespace DAGServer
                      worldDataMessage.Write(textureType);
                  }
              }
+            for (int x = 0; x < width; x++)
+            {
+                for (int y = 0; y < height; y++)
+                {
+                    byte objType = message.ReadByte();
+                    worldDataMessage.Write(objType);
+                    if (objType == 0)
+                        continue;
 
-             SendMessageToAllOthers(worldDataMessage, message.SenderConnection);
+                    int posX = message.ReadInt32();
+                    int posY = message.ReadInt32();
+                    byte info1 = message.ReadByte();
+                    byte info2 = message.ReadByte();
+
+                    worldDataMessage.Write(posX);
+                    worldDataMessage.Write(posY);
+                    worldDataMessage.Write(info1);
+                    worldDataMessage.Write(info2);
+                }
+            }
+
+            SendMessageToAllOthers(worldDataMessage, message.SenderConnection);
         }
 
-        public void HandleNewObjectInfo(NetIncomingMessage message, int sender)
+        public void HandleNewEnemyInfo(NetIncomingMessage message, int sender)
         {
-            int bodyType = message.ReadInt32();
-            int objectType = message.ReadInt32();
-            int objectIndex = message.ReadInt32();
+            byte enemyType = message.ReadByte();
             float posX = message.ReadFloat();
             float posY = message.ReadFloat();
+            byte enemyIndex = message.ReadByte();
+
             /*int objectInfoLength = 0;
             byte[] objectInfo = null;
             int objectExtraInfoLength = 0;
@@ -375,14 +419,13 @@ namespace DAGServer
                 objectExtraInfo = message.ReadBytes(objectExtraInfoLength);
             }*/
 
-            NetOutgoingMessage newObjectDataMessage = mainServer.CreateMessage();
-            newObjectDataMessage.Write((byte)ServerPacket.ServerPacketType.SendNewObjectInfo);
-            newObjectDataMessage.Write(sender);
-            newObjectDataMessage.Write(bodyType);
-            newObjectDataMessage.Write(objectType);
-            newObjectDataMessage.Write(objectIndex);
-            newObjectDataMessage.Write(posX);
-            newObjectDataMessage.Write(posY);
+            NetOutgoingMessage newEnemyDataMessage = mainServer.CreateMessage();
+            newEnemyDataMessage.Write((byte)ServerPacket.ServerPacketType.SendNewEnemyInfo);
+            newEnemyDataMessage.Write(sender);
+            newEnemyDataMessage.Write(enemyType);
+            newEnemyDataMessage.Write(posX);
+            newEnemyDataMessage.Write(posY);
+            newEnemyDataMessage.Write(enemyIndex);
             /*if (bodyType == 1)
             {
                 message.Write(objectInfoLength);
@@ -391,7 +434,7 @@ namespace DAGServer
                 message.Write(objectExtraInfo);
             }*/
 
-            SendMessageToAllOthers(newObjectDataMessage, message.SenderConnection);
+            SendMessageToAllOthers(newEnemyDataMessage, message.SenderConnection);
         }
 
         public void HandleSentEnemyVariableData(NetIncomingMessage message, int sender)
@@ -412,6 +455,37 @@ namespace DAGServer
             enemyDataMessage.Write(value3);
 
             SendMessageToAllOthers(enemyDataMessage, message.SenderConnection);
+        }
+
+        public void HandleNewProjectileInfo(NetIncomingMessage message, int sender)
+        {
+            byte type = message.ReadByte();
+            int posX = message.ReadInt32();
+            int posY = message.ReadInt32();
+            float velX = message.ReadInt32();
+            float velY = message.ReadInt32();
+            byte owner = message.ReadByte();
+            int index = message.ReadInt32();
+            int info1 = message.ReadInt32();
+            int info2 = message.ReadInt32();
+            int info3 = message.ReadInt32();
+
+            NetOutgoingMessage newProjectileDataMessage = mainServer.CreateMessage();
+            newProjectileDataMessage.Write((byte)ServerPacket.ServerPacketType.SendNewProjectileInfo);
+            newProjectileDataMessage.Write(sender);
+            newProjectileDataMessage.Write(type);
+            newProjectileDataMessage.Write(posX);
+            newProjectileDataMessage.Write(posY);
+            newProjectileDataMessage.Write(velX);
+            newProjectileDataMessage.Write(velY);
+
+            newProjectileDataMessage.Write(owner);
+            newProjectileDataMessage.Write(index);
+            newProjectileDataMessage.Write(info1);
+            newProjectileDataMessage.Write(info2);
+            newProjectileDataMessage.Write(info3);
+
+            SendMessageToAllOthers(newProjectileDataMessage, message.SenderConnection);
         }
 
         public void HandleSentProjectileVariableData(NetIncomingMessage message, int sender)
@@ -494,17 +568,32 @@ namespace DAGServer
             SendMessageToAllOthers(playerStateMessage, message.SenderConnection);
         }
 
-        public static void SendMessageToAllOthers(NetOutgoingMessage message, NetConnection senderConnection)
+        public void HandleReceivedItemCreation(NetIncomingMessage message, int sender)
+        {
+            NetOutgoingMessage itemCreationMessage = mainServer.CreateMessage();
+            itemCreationMessage.Write((byte)ServerPacket.ServerPacketType.SendNewItemCreation);
+            itemCreationMessage.Write(sender);
+
+            byte itemType = message.ReadByte();
+            int xPos = message.ReadInt32();
+            int yPos = message.ReadInt32();
+            itemCreationMessage.Write(itemType);
+            itemCreationMessage.Write(xPos);
+            itemCreationMessage.Write(yPos);
+
+            SendMessageToAllOthers(itemCreationMessage, message.SenderConnection);
+        }
+
+        public static void SendMessageToAllOthers(NetOutgoingMessage message, NetConnection senderConnection)       //Data sending
         {
             List<NetConnection> otherConnectionsList = mainServer.Connections;
             otherConnectionsList.Remove(senderConnection);
+
             if (otherConnectionsList.Count >= 1)
-            {
                 mainServer.SendMessage(message, otherConnectionsList, NetDeliveryMethod.ReliableOrdered, 0);
-            }
         }
 
-        public static void SendMessageBackToSender(NetOutgoingMessage message, NetConnection senderConnection)
+        public static void SendMessageBackToSender(NetOutgoingMessage message, NetConnection senderConnection)      //Data retrieval
         {
             mainServer.SendMessage(message, senderConnection, NetDeliveryMethod.ReliableOrdered);
         }
