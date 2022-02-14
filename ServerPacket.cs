@@ -6,13 +6,15 @@ namespace DAGServer
     {
         public enum ServerPacketType        //Packets that the server sends
         {
+            GivePing,
             GiveID,
             GiveClientInfo,
             GiveClientCharacterType,
             GiveAllClientData,
             GiveAllPlayerData,
             GivePlayerDataDeletion,
-            GiveClientPositon,
+            GiveClientMovementInformation,
+            SendPlayerVariableData,
             PlaySound,
             GiveStringMessageToOtherPlayers,
             SendWorldArrayToAll,
@@ -24,18 +26,21 @@ namespace DAGServer
             SendOtherPlayerDoneLoading,
             SendAllPlayerSpawnDataToOthers,
             SendOtherPlayerState,
-            SendNewItemCreation
+            SendNewItemCreation,
+            ReceiveEnemyListSync
         }
 
         public enum ClientPacketType        //Packets that the clients send
         {
+            SendPing,
             RequestID,
             SendClientInfo,
             SendClientCharacterType,
             RequestAllClientData,
             RequestAllPlayerData,
             RequestPlayerDataDeletion,
-            SendClientPosition,
+            SendMovementInformation,
+            SendPlayerVariableData,
             SendSound,
             SendStringMessageToOtherPlayers,
             SendWorldArray,
@@ -47,7 +52,8 @@ namespace DAGServer
             SendDoneLoading,
             SendAllPlayerSpawnData,
             SendPlayerState,
-            SendNewItemCreation
+            SendNewItemCreation,
+            SendEnemyListForSync
         }
     }
 }

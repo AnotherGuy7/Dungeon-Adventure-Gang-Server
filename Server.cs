@@ -11,11 +11,14 @@ namespace DAGServer
         public const string NetworkIP = "127.0.0.1";
         public const int NetworkPort = 11223;
         public const int MaximumLobbySize = 4;
+        public const bool DebugMode = false;
+        public const bool ReadablePacketInfo = true;
 
         public static NetServer mainServer;
         public static Dictionary<int, ClientData> clientData = new Dictionary<int, ClientData>();
         public static Dictionary<int, PlayerData> playerData = new Dictionary<int, PlayerData>();
 
+        public static int[] dungeonEnemies = new int[255];
         public static int[] gameProjectileExists = new int[1000];
 
         public void CreateNewServer()
@@ -48,7 +51,7 @@ namespace DAGServer
                         Logger.Error("A connection has disconnected.");
                     break;
                 case NetIncomingMessageType.DebugMessage:
-                    Logger.Info("Debug Packet received: " + message.ReadString());
+                    Logger.DebugInfo("Debug Packet received: " + message.ReadString());
                     break;
                 case NetIncomingMessageType.Data:
                     HandleDataMessages(message);
@@ -66,10 +69,14 @@ namespace DAGServer
         {
             ServerPacket.ClientPacketType messageDataType = (ServerPacket.ClientPacketType)message.ReadByte();
             int sender = message.ReadInt32();
-            Logger.Info(messageDataType.ToString());
+            Logger.DebugInfo(messageDataType.ToString());
 
             switch (messageDataType)
             {
+                case ServerPacket.ClientPacketType.SendPing:
+                    HandleReceivedPingPacket(message, sender);
+                    break;
+
                 case ServerPacket.ClientPacketType.RequestID:       //Gives the peer who requested it an ID
                     HandleIDRequest(message, sender);
                     break;
@@ -94,8 +101,12 @@ namespace DAGServer
                     HandlePlayerDataDeletionRequest(message, sender);
                     break;
 
-                case ServerPacket.ClientPacketType.SendClientPosition:      //Sends the peer's position to all peers that aren't the sender
-                    HandleClientPositionInformation(message, sender);
+                case ServerPacket.ClientPacketType.SendMovementInformation:      //Sends the peer's position to all peers that aren't the sender
+                    HandleClientMovementInformation(message, sender);
+                    break;
+
+                case ServerPacket.ClientPacketType.SendPlayerVariableData:
+                    HandleReceivedPlayerVariableData(message, sender);
                     break;
 
                 /*case ServerPacket.ClientPacketType.SendPlayerInfo:      //Send the peer's player information to all peers that aren't the sender
@@ -149,7 +160,21 @@ namespace DAGServer
                 case ServerPacket.ClientPacketType.SendNewItemCreation:
                     HandleReceivedItemCreation(message, sender);
                     break;
+
+                case ServerPacket.ClientPacketType.SendEnemyListForSync:
+                    HandleReceivedEnemyListSync(message, sender);
+                    break;
             }
+        }
+
+        public void HandleReceivedPingPacket(NetIncomingMessage message, int sender)
+        {
+            NetOutgoingMessage pingMessage = mainServer.CreateMessage();
+            pingMessage.Write((byte)ServerPacket.ServerPacketType.GivePing);
+            pingMessage.Write(sender);
+            pingMessage.Write(0);
+
+            SendMessageBackToSender(pingMessage, message.SenderConnection);
         }
 
         public void HandleIDRequest(NetIncomingMessage message, int sender)
@@ -162,6 +187,7 @@ namespace DAGServer
             clientIDMessage.Write(givenID);
 
             SendMessageBackToSender(clientIDMessage, message.SenderConnection);
+            Logger.UserFriendlyInfo("Assigned ID of " + givenID + " to a newly connected client.");
         }
 
         public void HandleNewClientInfo(NetIncomingMessage message, int sender)
@@ -265,22 +291,45 @@ namespace DAGServer
             }
 
             SendMessageToAllOthers(playerDataDeletionMessage, message.SenderConnection);
+            Logger.UserFriendlyInfo("A client has been removed from the game.");
         }
 
-        public void HandleClientPositionInformation(NetIncomingMessage message, int sender)
+        public void HandleClientMovementInformation(NetIncomingMessage message, int sender)
         {
             float x = message.ReadFloat();
             float y = message.ReadFloat();
+            float velX = message.ReadFloat();
+            float velY = message.ReadFloat();
             int direction = message.ReadInt32();
 
-            NetOutgoingMessage playerPositionMessage = mainServer.CreateMessage();
-            playerPositionMessage.Write((byte)ServerPacket.ServerPacketType.GiveClientPositon);
-            playerPositionMessage.Write(sender);
-            playerPositionMessage.Write(x);
-            playerPositionMessage.Write(y);
-            playerPositionMessage.Write(direction);
+            NetOutgoingMessage playerMovementMessage = mainServer.CreateMessage();
+            playerMovementMessage.Write((byte)ServerPacket.ServerPacketType.GiveClientMovementInformation);
+            playerMovementMessage.Write(sender);
+            playerMovementMessage.Write(x);
+            playerMovementMessage.Write(y);
+            playerMovementMessage.Write(velX);
+            playerMovementMessage.Write(velY);
+            playerMovementMessage.Write(direction);
 
-            SendMessageToAllOthers(playerPositionMessage, message.SenderConnection);
+            SendMessageToAllOthers(playerMovementMessage, message.SenderConnection, NetDeliveryMethod.Unreliable);
+        }
+
+        public void HandleReceivedPlayerVariableData(NetIncomingMessage message, int sender)
+        {
+            byte variableIndex = message.ReadByte();
+            int value1 = message.ReadInt32();
+            int value2 = message.ReadInt32();
+            int value3 = message.ReadInt32();
+
+            NetOutgoingMessage enemyDataMessage = mainServer.CreateMessage();
+            enemyDataMessage.Write((byte)ServerPacket.ServerPacketType.SendPlayerVariableData);
+            enemyDataMessage.Write(sender);
+            enemyDataMessage.Write(variableIndex);
+            enemyDataMessage.Write(value1);
+            enemyDataMessage.Write(value2);
+            enemyDataMessage.Write(value3);
+
+            SendMessageToAllOthers(enemyDataMessage, message.SenderConnection);
         }
 
         /*public void HandlePlayerInfo(NetIncomingMessage message, int sender)
@@ -331,7 +380,6 @@ namespace DAGServer
 
 
             SendMessageToAllOthers(soundInfoMessage, message.SenderConnection);
-
         }
 
         public void HandleSentMessage(NetIncomingMessage message, int sender)
@@ -344,6 +392,7 @@ namespace DAGServer
             stringMessage.Write(playerMessage);
 
             SendMessageToAllOthers(stringMessage, message.SenderConnection);
+            Logger.UserFriendlyInfo("Player " + sender + ": " + playerMessage);
         }
 
         public void HandleWorldData(NetIncomingMessage message, int sender)
@@ -398,6 +447,7 @@ namespace DAGServer
             }
 
             SendMessageToAllOthers(worldDataMessage, message.SenderConnection);
+            Logger.UserFriendlyInfo("Created World of [" + width + ", " + height + "].");
         }
 
         public void HandleNewEnemyInfo(NetIncomingMessage message, int sender)
@@ -446,7 +496,7 @@ namespace DAGServer
             int value3 = message.ReadInt32();
 
             NetOutgoingMessage enemyDataMessage = mainServer.CreateMessage();
-            enemyDataMessage.Write((byte)ServerPacket.ServerPacketType.SendProjectileVariableData);
+            enemyDataMessage.Write((byte)ServerPacket.ServerPacketType.SendEnemyVariableData);
             enemyDataMessage.Write(sender);
             enemyDataMessage.Write(objectIndex);
             enemyDataMessage.Write(variableIndex);
@@ -584,19 +634,45 @@ namespace DAGServer
             SendMessageToAllOthers(itemCreationMessage, message.SenderConnection);
         }
 
-        public static void SendMessageToAllOthers(NetOutgoingMessage message, NetConnection senderConnection)       //Data sending
+        public void HandleReceivedEnemyListSync(NetIncomingMessage message, int sender)
+        {
+            NetOutgoingMessage enemySyncMessage = mainServer.CreateMessage();
+            enemySyncMessage.Write((byte)ServerPacket.ServerPacketType.ReceiveEnemyListSync);
+            enemySyncMessage.Write(sender);
+
+            byte amountOfEnemies = message.ReadByte();
+            message.Write(amountOfEnemies);
+
+            dungeonEnemies = new int[amountOfEnemies];
+            for (int i = 0; i < amountOfEnemies; i++)
+            {
+                byte enemyType = message.ReadByte();
+                int health = message.ReadInt32();
+                int posX = message.ReadInt32();
+                int posY = message.ReadInt32();
+                dungeonEnemies[i] = enemyType;
+
+                message.Write(enemyType);
+                message.Write(health);
+                message.Write(posX);
+                message.Write(posY);
+            }
+
+            SendMessageToAllOthers(enemySyncMessage, message.SenderConnection);
+        }
+
+        public static void SendMessageToAllOthers(NetOutgoingMessage message, NetConnection senderConnection, NetDeliveryMethod deliveryMethod = NetDeliveryMethod.ReliableOrdered)       //Data sending
         {
             List<NetConnection> otherConnectionsList = mainServer.Connections;
             otherConnectionsList.Remove(senderConnection);
 
             if (otherConnectionsList.Count >= 1)
-                mainServer.SendMessage(message, otherConnectionsList, NetDeliveryMethod.ReliableOrdered, 0);
+                mainServer.SendMessage(message, otherConnectionsList, deliveryMethod, 0);
         }
 
-        public static void SendMessageBackToSender(NetOutgoingMessage message, NetConnection senderConnection)      //Data retrieval
+        public static void SendMessageBackToSender(NetOutgoingMessage message, NetConnection senderConnection, NetDeliveryMethod deliveryMethod = NetDeliveryMethod.ReliableOrdered)      //Data retrieval
         {
-            mainServer.SendMessage(message, senderConnection, NetDeliveryMethod.ReliableOrdered);
+            mainServer.SendMessage(message, senderConnection, deliveryMethod);
         }
-
     }
 }
