@@ -1,7 +1,8 @@
-﻿using DAGServer.Data;
-using Lidgren.Network;
+﻿using Lidgren.Network;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
+using static DAGServer.ServerData;
 
 namespace DAGServer
 {
@@ -11,8 +12,8 @@ namespace DAGServer
         public const string NetworkIP = "127.0.0.1";
         public const int NetworkPort = 11223;
         public const int MaximumLobbySize = 4;
-        public const bool DebugMode = false;
-        public const bool ReadablePacketInfo = true;
+        public const bool DebugMode = true;     //Writes out all incoming and outgoing packets.
+        public const bool ReadablePacketInfo = false;       //Writes out messages that normal people can understand.
 
         public static NetServer mainServer;
         public static Dictionary<int, ClientData> clientData = new Dictionary<int, ClientData>();
@@ -27,12 +28,19 @@ namespace DAGServer
             NetPeerConfiguration config = new NetPeerConfiguration(ConfigurationApplicationName)
             {
                 Port = NetworkPort,
-                MaximumConnections = 4
+                MaximumConnections = 4,
             };
+
+            string hostName = Dns.GetHostName(); // Retrive the Name of HOST
+            string myIP = Dns.GetHostEntry(hostName).AddressList[0].MapToIPv4().ToString() + " or " + Dns.GetHostEntry(hostName).AddressList[1].MapToIPv4().ToString();
+            /*
+            string routerIP = Dns.GetHostEntry(hostName).AddressList[0].ToString()
+            string localIP = Dns.GetHostEntry(hostName).AddressList[1].ToString()
+            */
 
             mainServer = new NetServer(config);
             mainServer.Start();
-            Logger.Info("Server created at: " + NetworkIP + " (Port: " + NetworkPort + ")");
+            Logger.Info("Server created at: " + myIP + " (Port: " + NetworkPort + ")");
         }
 
         public void SearchForMessages(NetPeer peer)
@@ -93,9 +101,9 @@ namespace DAGServer
                     HandleAllClientsDataRequest(message, sender);
                     break;
 
-                case ServerPacket.ClientPacketType.RequestAllPlayerData:        //Returns the data of all current players in the game.
+                /*case ServerPacket.ClientPacketType.RequestAllPlayerData:        //Returns the data of all current players in the game.
                     HandleAllPlayersDataRequest(message, sender);
-                    break;
+                    break;*/
 
                 case ServerPacket.ClientPacketType.RequestPlayerDataDeletion:
                     HandlePlayerDataDeletionRequest(message, sender);
@@ -200,7 +208,6 @@ namespace DAGServer
             newClientData.clientName = clientName;
             clientData.Add(clientID, newClientData);
 
-
             if (mainServer.Connections.Count < 2)
                 return;
 
@@ -219,7 +226,9 @@ namespace DAGServer
             int clientID = sender;
             int clientCharacterType = message.ReadInt32();
 
-            clientData[clientID].chosenCharacterType = clientCharacterType;
+            ClientData clientDataClone = clientData[clientID];
+            clientDataClone.chosenCharacterType = clientCharacterType;
+            clientData[clientID] = clientDataClone;
 
             if (mainServer.Connections.Count < 2)
                 return;
@@ -244,14 +253,15 @@ namespace DAGServer
             ClientData[] clientDataArray = clientData.Values.ToArray();
             for (int i = 0; i < clientDataArray.Length; i++)        //The data has to be read by index cause we don't know how many players there are
             {
-                clientDataMessage.Write(clientDataArray[i].clientID);
+                clientDataMessage.Write((byte)clientDataArray[i].clientID);
                 clientDataMessage.Write(clientDataArray[i].clientName);
+                clientDataMessage.Write((byte)clientDataArray[i].chosenCharacterType);
             }
 
             SendMessageBackToSender(clientDataMessage, message.SenderConnection);
         }
 
-        public void HandleAllPlayersDataRequest(NetIncomingMessage message, int sender)
+        /*public void HandleAllPlayersDataRequest(NetIncomingMessage message, int sender)
         {
             NetOutgoingMessage playerDataMessage = mainServer.CreateMessage();
             playerDataMessage.Write((byte)ServerPacket.ServerPacketType.GiveAllPlayerData);
@@ -267,7 +277,7 @@ namespace DAGServer
             }
 
             SendMessageBackToSender(playerDataMessage, message.SenderConnection);
-        }
+        }*/
 
         public void HandlePlayerDataDeletionRequest(NetIncomingMessage message, int sender)
         {
@@ -620,13 +630,13 @@ namespace DAGServer
 
         public void HandleReceivedItemCreation(NetIncomingMessage message, int sender)
         {
-            NetOutgoingMessage itemCreationMessage = mainServer.CreateMessage();
-            itemCreationMessage.Write((byte)ServerPacket.ServerPacketType.SendNewItemCreation);
-            itemCreationMessage.Write(sender);
-
             byte itemType = message.ReadByte();
             int xPos = message.ReadInt32();
             int yPos = message.ReadInt32();
+
+            NetOutgoingMessage itemCreationMessage = mainServer.CreateMessage();
+            itemCreationMessage.Write((byte)ServerPacket.ServerPacketType.SendNewItemCreation);
+            itemCreationMessage.Write(sender);
             itemCreationMessage.Write(itemType);
             itemCreationMessage.Write(xPos);
             itemCreationMessage.Write(yPos);
