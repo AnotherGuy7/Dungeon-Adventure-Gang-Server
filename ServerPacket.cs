@@ -21,12 +21,13 @@ namespace DAGServer
             SendNewEnemyInfo,
             SendNewProjectileInfo,
             SendEnemyVariableData,
+            SendEnemyDeath,
             SendProjectileVariableData,
             SendPlayerUsedItem,
             SendOtherPlayerDoneLoading,
             SendAllPlayerSpawnDataToOthers,
-            SendOtherPlayerState,
             SendNewItemCreation,
+            SendItemDeletion,
             ReceiveEnemyListSync
         }
 
@@ -45,14 +46,15 @@ namespace DAGServer
             SendStringMessageToOtherPlayers,
             SendWorldArray,
             SendNewEnemyInfo,
-            SendNewProjectileInfo,
             SendEnemyVariableData,
+            SendEnemyDeletion,
+            SendNewProjectileInfo,
             SendProjectileVariableData,
             SendPlayerUsedItem,
             SendDoneLoading,
             SendAllPlayerSpawnData,
-            SendPlayerState,
             SendNewItemCreation,
+            SendItemDeletion,
             SendEnemyListForSync
         }
     }

@@ -12,8 +12,8 @@ namespace DAGServer
         public const string NetworkIP = "127.0.0.1";
         public const int NetworkPort = 11223;
         public const int MaximumLobbySize = 4;
-        public const bool DebugMode = true;     //Writes out all incoming and outgoing packets.
-        public const bool ReadablePacketInfo = false;       //Writes out messages that normal people can understand.
+        public const bool DebugMode = false;     //Writes out all incoming and outgoing packets.
+        public const bool ReadablePacketInfo = true;       //Writes out messages that normal people can understand.
 
         public static NetServer mainServer;
         public static Dictionary<int, ClientData> clientData = new Dictionary<int, ClientData>();
@@ -141,6 +141,8 @@ namespace DAGServer
                     HandleSentEnemyVariableData(message, sender);
                     break;
 
+                case ServerPacket.ClientPacketType.SendEnemyDeletion:
+
                 case ServerPacket.ClientPacketType.SendNewProjectileInfo:
                     HandleNewProjectileInfo(message, sender);
                     break;
@@ -161,12 +163,12 @@ namespace DAGServer
                     HandleReceivedPlayerSpawnData(message, sender);
                     break;
 
-                case ServerPacket.ClientPacketType.SendPlayerState:
-                    HandleReceivedPlayerState(message, sender);
-                    break;
-
                 case ServerPacket.ClientPacketType.SendNewItemCreation:
                     HandleReceivedItemCreation(message, sender);
+                    break;
+
+                case ServerPacket.ClientPacketType.SendItemDeletion:
+                    HandleReceivedItemDeletion(message, sender);
                     break;
 
                 case ServerPacket.ClientPacketType.SendEnemyListForSync:
@@ -504,6 +506,8 @@ namespace DAGServer
             int value1 = message.ReadInt32();
             int value2 = message.ReadInt32();
             int value3 = message.ReadInt32();
+            if (variableIndex == 0 && value1 > 4)
+                value1 = 0;
 
             NetOutgoingMessage enemyDataMessage = mainServer.CreateMessage();
             enemyDataMessage.Write((byte)ServerPacket.ServerPacketType.SendEnemyVariableData);
@@ -515,6 +519,18 @@ namespace DAGServer
             enemyDataMessage.Write(value3);
 
             SendMessageToAllOthers(enemyDataMessage, message.SenderConnection);
+        }
+
+        public void HandleSentEnemyDeletion(NetIncomingMessage message, int sender)
+        {
+            int enemyIndex = message.ReadInt32();
+
+            NetOutgoingMessage enemyDeletionMessage = mainServer.CreateMessage();
+            enemyDeletionMessage.Write((byte)ServerPacket.ServerPacketType.SendEnemyDeath);
+            enemyDeletionMessage.Write(sender);
+            enemyDeletionMessage.Write(enemyIndex);
+
+            SendMessageToAllOthers(enemyDeletionMessage, message.SenderConnection);
         }
 
         public void HandleNewProjectileInfo(NetIncomingMessage message, int sender)
@@ -616,18 +632,6 @@ namespace DAGServer
             SendMessageToAllOthers(spawnDataMessage, message.SenderConnection);
         }
 
-        public void HandleReceivedPlayerState(NetIncomingMessage message, int sender)
-        {
-            NetOutgoingMessage playerStateMessage = mainServer.CreateMessage();
-            playerStateMessage.Write((byte)ServerPacket.ServerPacketType.SendOtherPlayerState);
-            playerStateMessage.Write(sender);
-
-            byte playerState = message.ReadByte();
-            playerStateMessage.Write(playerState);
-
-            SendMessageToAllOthers(playerStateMessage, message.SenderConnection);
-        }
-
         public void HandleReceivedItemCreation(NetIncomingMessage message, int sender)
         {
             byte itemType = message.ReadByte();
@@ -642,6 +646,18 @@ namespace DAGServer
             itemCreationMessage.Write(yPos);
 
             SendMessageToAllOthers(itemCreationMessage, message.SenderConnection);
+        }
+
+        public void HandleReceivedItemDeletion(NetIncomingMessage message, int sender)
+        {
+            byte index = message.ReadByte();
+
+            NetOutgoingMessage itemDeletionMessage = mainServer.CreateMessage();
+            itemDeletionMessage.Write((byte)ServerPacket.ServerPacketType.SendItemDeletion);
+            itemDeletionMessage.Write(sender);
+            itemDeletionMessage.Write(index);
+
+            SendMessageToAllOthers(itemDeletionMessage, message.SenderConnection);
         }
 
         public void HandleReceivedEnemyListSync(NetIncomingMessage message, int sender)
@@ -683,6 +699,30 @@ namespace DAGServer
         public static void SendMessageBackToSender(NetOutgoingMessage message, NetConnection senderConnection, NetDeliveryMethod deliveryMethod = NetDeliveryMethod.ReliableOrdered)      //Data retrieval
         {
             mainServer.SendMessage(message, senderConnection, deliveryMethod);
+        }
+
+        public static void SendMessageToAllOthersOnInterval(NetOutgoingMessage message, NetConnection senderConnection, int interval, NetDeliveryMethod deliveryMethod = NetDeliveryMethod.ReliableOrdered)       //Data sending
+        {
+            List<NetConnection> otherConnectionsList = mainServer.Connections;
+            otherConnectionsList.Remove(senderConnection);
+
+            int[] clientDataKeys = clientData.Keys.ToArray();
+            if (otherConnectionsList.Count >= 1)
+            {
+                int timer = 0;
+                int senderIndex = 0;
+                while (senderIndex != otherConnectionsList.Count)
+                {
+                    timer++;
+                    if (timer >= interval)
+                    {
+                        timer = 0;
+                        mainServer.SendMessage(message, otherConnectionsList[senderIndex], deliveryMethod, 0);
+                        Logger.Info("Shot packet to " + clientData[clientDataKeys[senderIndex]].clientName);
+                        senderIndex++;
+                    }
+                }
+            }
         }
     }
 }
