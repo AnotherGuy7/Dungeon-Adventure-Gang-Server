@@ -9,7 +9,7 @@
             dagServer = new Server();
             dagServer.CreateNewServer();
             while (true)
-                dagServer.SearchForMessages(Server.mainServer);
+                dagServer.SearchForMessages();
 
         }
     }

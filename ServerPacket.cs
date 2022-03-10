@@ -1,17 +1,14 @@
-﻿using Lidgren.Network;
-
-namespace DAGServer
+﻿namespace DAGServer
 {
     public class ServerPacket
     {
         public enum ServerPacketType        //Packets that the server sends
         {
             GivePing,
-            GiveID,
             GiveClientInfo,
             GiveClientCharacterType,
             GiveAllClientData,
-            GiveAllPlayerData,
+            GiveLobbyData,
             GivePlayerDataDeletion,
             GiveClientMovementInformation,
             SendPlayerVariableData,
@@ -34,11 +31,10 @@ namespace DAGServer
         public enum ClientPacketType        //Packets that the clients send
         {
             SendPing,
-            RequestID,
             SendClientInfo,
             SendClientCharacterType,
             RequestAllClientData,
-            RequestAllPlayerData,
+            RequestLobbyData,
             RequestPlayerDataDeletion,
             SendMovementInformation,
             SendPlayerVariableData,
