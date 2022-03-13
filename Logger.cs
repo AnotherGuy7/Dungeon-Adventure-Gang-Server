@@ -1,4 +1,5 @@
-﻿using System;
+﻿using LiteNetLib.Utils;
+using System;
 
 namespace DAGServer
 {
@@ -35,6 +36,26 @@ namespace DAGServer
         {
             Console.ForegroundColor = ConsoleColor.Red;
             Console.WriteLine("[" + DateTime.Now + "]: " + message);
+            Console.ResetColor();
+        }
+
+        public static void LogPacketReceieve(ServerPacket.ClientPacketType packetType)
+        {
+            if (!Server.PacketLogs)
+                return;
+
+            Console.ForegroundColor = ConsoleColor.Gray;
+            Console.WriteLine("[" + DateTime.Now + "]: " + "Received " + packetType + " packet.");
+            Console.ResetColor();
+        }
+
+        public static void LogPacketSent(NetDataWriter packet)
+        {
+            if (!Server.PacketLogs)
+                return;
+
+            Console.ForegroundColor = ConsoleColor.White;
+            Console.WriteLine("[" + DateTime.Now + "]: " + "Sent " + (ServerPacket.ServerPacketType)packet.Data[0] + " packet.");
             Console.ResetColor();
         }
     }

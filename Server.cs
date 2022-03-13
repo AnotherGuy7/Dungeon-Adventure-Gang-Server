@@ -14,8 +14,9 @@ namespace DAGServer
         public const string NetworkIP = "127.0.0.1";
         public const int NetworkPort = 11223;
         public const int MaximumLobbySize = 4;
-        public const bool DebugMode = true;     //Writes out all incoming and outgoing packets.
-        public const bool ReadablePacketInfo = false;       //Writes out messages that normal people can understand.
+        public const bool DebugMode = false;     //Writes out all incoming and outgoing packets.
+        public const bool ReadablePacketInfo = true;       //Writes out messages that normal people can understand.
+        public const bool PacketLogs = true;
 
         public static NetPeer serverPeer;
         public static NetManager serverManager;
@@ -34,14 +35,21 @@ namespace DAGServer
             serverListener = new EventBasedNetListener();
             serverManager = new NetManager(serverListener);
             serverManager.UpdateTime = 15;
+            serverManager.NatPunchEnabled = true;
 
             serverManager.Start(NetworkPort);
 
             serverListener.NetworkReceiveEvent += HandleDataMessages;
             serverListener.ConnectionRequestEvent += ClientConnectRequest;
             serverListener.PeerConnectedEvent += ClientConnected;
+            serverListener.PeerDisconnectedEvent += ClientDisconnected;
 
             Logger.Info("Server created at: " + GetPublicIp() + " (Port: " + NetworkPort + ")");
+        }
+
+        private void ClientDisconnected(NetPeer peer, DisconnectInfo disconnectInfo)
+        {
+            Logger.Error("Client Disconnected. (Disconnection caused by " + disconnectInfo.Reason + ")");
         }
 
         public static string GetPublicIp(string serviceUrl = "https://ipinfo.io/ip")            //https://stackoverflow.com/questions/3253701/get-public-external-ip-address 
@@ -75,18 +83,12 @@ namespace DAGServer
 
             request.Accept();
             amountOfConnectedPlayers++;
-
-            ClientData newClientData = new ClientData();
-            newClientData.clientID = amountOfConnectedPlayers;
-            newClientData.clientName = request.Data.GetString();
-            clientData.Add(newClientData.clientID, newClientData);
-
             Logger.Info("Client Connection Request Accepted.");
         }
 
         public void ClientConnected(NetPeer peer)       //Upon client connections, we send back lobby data and new client info.
         {
-            NetDataWriter newClientIDAndLobbyInfo = new NetDataWriter();
+            /*NetDataWriter newClientIDAndLobbyInfo = new NetDataWriter();
             newClientIDAndLobbyInfo.Put((byte)ServerPacket.ServerPacketType.GiveLobbyData);
             newClientIDAndLobbyInfo.Put(0);
 
@@ -115,14 +117,15 @@ namespace DAGServer
             }
 
             SendMessageBackToSender(newClientIDAndLobbyInfo, peer);
-            Logger.Info("New Client connected. Assigned ID of: " + newClientID);
+            Logger.Info("New Client connected. Assigned ID of: " + newClientID);*/
+            Logger.Info("New Client connected.");
         }
 
         public void HandleDataMessages(NetPeer peer, NetPacketReader reader, DeliveryMethod deliveryMethod)
         {
             ServerPacket.ClientPacketType messageDataType = (ServerPacket.ClientPacketType)reader.GetByte();
             int senderID = reader.GetInt();
-            Logger.DebugInfo(messageDataType.ToString());
+            Logger.LogPacketReceieve(messageDataType);
 
             switch (messageDataType)
             {
@@ -130,9 +133,9 @@ namespace DAGServer
                     HandleReceivedPingPacket(peer, reader, senderID);
                     break;
 
-                /*case ServerPacket.ClientPacketType.RequestID:       //Gives the peer who requested it an ID
+                case ServerPacket.ClientPacketType.RequestID:       //Gives the peer who requested it an ID
                     HandleIDRequest(peer, reader, senderID);
-                    break;*/
+                    break;
 
                 case ServerPacket.ClientPacketType.SendClientInfo:
                     HandleNewClientInfo(peer, reader, senderID);
@@ -142,9 +145,9 @@ namespace DAGServer
                     HandleClientCharacterType(peer, reader, senderID);
                     break;
 
-                /*case ServerPacket.ClientPacketType.RequestAllClientData:
+                case ServerPacket.ClientPacketType.RequestAllClientData:
                     HandleAllClientsDataRequest(peer, reader, senderID);
-                    break;*/
+                    break;
 
                 /*case ServerPacket.ClientPacketType.RequestAllPlayerData:        //Returns the data of all current players in the game.
                     HandleAllPlayersDataRequest(peer, reader, senderID);
@@ -187,6 +190,8 @@ namespace DAGServer
                     break;
 
                 case ServerPacket.ClientPacketType.SendEnemyDeletion:
+                    HandleSentEnemyDeletion(peer, reader, senderID);
+                    break;
 
                 case ServerPacket.ClientPacketType.SendNewProjectileInfo:
                     HandleNewProjectileInfo(peer, reader, senderID);
@@ -232,6 +237,19 @@ namespace DAGServer
             SendMessageBackToSender(pingMessage, sender);
         }
 
+        public void HandleIDRequest(NetPeer sender, NetDataReader reader, int senderID)
+        {
+            int givenID = clientData.Count + 1;
+
+            NetDataWriter clientIDMessage = new NetDataWriter();
+            clientIDMessage.Put((byte)ServerPacket.ServerPacketType.GiveID);
+            clientIDMessage.Put(senderID);
+            clientIDMessage.Put(givenID);
+
+            SendMessageBackToSender(clientIDMessage, sender);
+            Logger.UserFriendlyInfo("Assigned ID of " + givenID + " to a newly connected client.");
+        }
+
         public void HandleNewClientInfo(NetPeer sender, NetDataReader reader, int senderID)
         {
             int clientID = senderID;
@@ -251,7 +269,7 @@ namespace DAGServer
             clientInfoMessage.Put(clientID);
             clientInfoMessage.Put(clientName);
 
-            SendMessageToAllOthers(clientInfoMessage);
+            SendMessageToAllOthers(clientInfoMessage, sender);
         }
 
         public void HandleClientCharacterType(NetPeer sender, NetDataReader reader, int senderID)
@@ -273,10 +291,10 @@ namespace DAGServer
             clientCharacterTypeMessage.Put(clientID);
             clientCharacterTypeMessage.Put(clientCharacterType);
 
-            SendMessageToAllOthers(clientCharacterTypeMessage);
+            SendMessageToAllOthers(clientCharacterTypeMessage, sender);
         }
 
-        /*public void HandleAllClientsDataRequest(NetPeer sender, NetDataReader reader, int senderID)
+        public void HandleAllClientsDataRequest(NetPeer sender, NetDataReader reader, int senderID)
         {
             NetDataWriter clientDataMessage = new NetDataWriter();
             clientDataMessage.Put((byte)ServerPacket.ServerPacketType.GiveAllClientData);
@@ -292,7 +310,7 @@ namespace DAGServer
             }
 
             SendMessageBackToSender(clientDataMessage, sender);
-        }*/
+        }
 
         /*public void HandleAllPlayersDataRequest(NetPeer sender, NetDataReader reader, int senderID)
         {
@@ -333,7 +351,7 @@ namespace DAGServer
                 }
             }
 
-            SendMessageToAllOthers(playerDataDeletionMessage);
+            SendMessageToAllOthers(playerDataDeletionMessage, sender);
             Logger.UserFriendlyInfo("A client has been removed from the game.");
         }
 
@@ -354,7 +372,7 @@ namespace DAGServer
             playerMovementMessage.Put(velY);
             playerMovementMessage.Put(direction);
 
-            SendMessageToAllOthers(playerMovementMessage, DeliveryMethod.Unreliable);
+            SendMessageToAllOthers(playerMovementMessage, sender, DeliveryMethod.Unreliable);
         }
 
         public void HandleReceivedPlayerVariableData(NetPeer sender, NetDataReader reader, int senderID)
@@ -372,7 +390,7 @@ namespace DAGServer
             enemyDataMessage.Put(value2);
             enemyDataMessage.Put(value3);
 
-            SendMessageToAllOthers(enemyDataMessage);
+            SendMessageToAllOthers(enemyDataMessage, sender);
         }
 
         /*public void HandlePlayerInfo(NetPeer sender, NetDataReader reader, int senderID)
@@ -422,7 +440,7 @@ namespace DAGServer
             soundInfoMessage.Put(soundTravelDistance);
 
 
-            SendMessageToAllOthers(soundInfoMessage);
+            SendMessageToAllOthers(soundInfoMessage, sender);
         }
 
         public void HandleSentMessage(NetPeer sender, NetDataReader reader, int senderID)
@@ -434,7 +452,7 @@ namespace DAGServer
             stringMessage.Put(senderID);
             stringMessage.Put(playerMessage);
 
-            SendMessageToAllOthers(stringMessage);
+            SendMessageToAllOthers(stringMessage, sender);
             Logger.UserFriendlyInfo("Player " + sender + ": " + playerMessage);
         }
 
@@ -489,7 +507,7 @@ namespace DAGServer
                 }
             }
 
-            SendMessageToAllOthers(worldDataMessage);
+            SendMessageToAllOthers(worldDataMessage, sender);
             Logger.UserFriendlyInfo("Created World of [" + width + ", " + height + "].");
         }
 
@@ -498,7 +516,7 @@ namespace DAGServer
             byte enemyType = reader.GetByte();
             float posX = reader.GetFloat();
             float posY = reader.GetFloat();
-            byte enemyIndex = reader.GetByte();
+            //byte enemyIndex = reader.GetByte();
 
             /*int objectInfoLength = 0;
             byte[] objectInfo = null;
@@ -518,7 +536,7 @@ namespace DAGServer
             newEnemyDataMessage.Put(enemyType);
             newEnemyDataMessage.Put(posX);
             newEnemyDataMessage.Put(posY);
-            newEnemyDataMessage.Put(enemyIndex);
+            //newEnemyDataMessage.Put(enemyIndex);
             /*if (bodyType == 1)
             {
                 reader.Put(objectInfoLength);
@@ -527,7 +545,7 @@ namespace DAGServer
                 reader.Put(objectExtraInfo);
             }*/
 
-            SendMessageToAllOthers(newEnemyDataMessage);
+            SendMessageToAllOthers(newEnemyDataMessage, sender);
         }
 
         public void HandleSentEnemyVariableData(NetPeer sender, NetDataReader reader, int senderID)
@@ -538,7 +556,7 @@ namespace DAGServer
             int value2 = reader.GetInt();
             int value3 = reader.GetInt();
             if (variableIndex == 0 && value1 > 4)
-                value1 = 0;
+                value1 = 1;
 
             NetDataWriter enemyDataMessage = new NetDataWriter();
             enemyDataMessage.Put((byte)ServerPacket.ServerPacketType.SendEnemyVariableData);
@@ -549,19 +567,23 @@ namespace DAGServer
             enemyDataMessage.Put(value2);
             enemyDataMessage.Put(value3);
 
-            SendMessageToAllOthers(enemyDataMessage);
+            SendMessageToAllOthers(enemyDataMessage, sender);
         }
 
         public void HandleSentEnemyDeletion(NetPeer sender, NetDataReader reader, int senderID)
         {
             int enemyIndex = reader.GetInt();
+            int posX = reader.GetInt();
+            int posY = reader.GetInt();
 
             NetDataWriter enemyDeletionMessage = new NetDataWriter();
             enemyDeletionMessage.Put((byte)ServerPacket.ServerPacketType.SendEnemyDeath);
             enemyDeletionMessage.Put(senderID);
             enemyDeletionMessage.Put(enemyIndex);
+            enemyDeletionMessage.Put(posX);
+            enemyDeletionMessage.Put(posY);
 
-            SendMessageToAllOthers(enemyDeletionMessage);
+            SendMessageToAllOthers(enemyDeletionMessage, sender);
         }
 
         public void HandleNewProjectileInfo(NetPeer sender, NetDataReader reader, int senderID)
@@ -592,7 +614,7 @@ namespace DAGServer
             newProjectileDataMessage.Put(info2);
             newProjectileDataMessage.Put(info3);
 
-            SendMessageToAllOthers(newProjectileDataMessage);
+            SendMessageToAllOthers(newProjectileDataMessage, sender);
         }
 
         public void HandleSentProjectileVariableData(NetPeer sender, NetDataReader reader, int senderID)
@@ -612,7 +634,7 @@ namespace DAGServer
             projectileDataMessage.Put(value2);
             projectileDataMessage.Put(value3);
 
-            SendMessageToAllOthers(projectileDataMessage);
+            SendMessageToAllOthers(projectileDataMessage, sender);
         }
 
         public void HandlePlayerItemUsage(NetPeer sender, NetDataReader reader, int senderID)
@@ -630,7 +652,7 @@ namespace DAGServer
             itemUsageMessage.Put(emulatedMousePosY);
             itemUsageMessage.Put(secondaryUse);
 
-            SendMessageToAllOthers(itemUsageMessage);
+            SendMessageToAllOthers(itemUsageMessage, sender);
         }
 
         public void HandleReceivedDoneLoading(NetPeer sender, NetDataReader reader, int senderID)
@@ -639,7 +661,7 @@ namespace DAGServer
             doneLoadingMessage.Put((byte)ServerPacket.ServerPacketType.SendOtherPlayerDoneLoading);
             doneLoadingMessage.Put(senderID);
 
-            SendMessageToAllOthers(doneLoadingMessage);
+            SendMessageToAllOthers(doneLoadingMessage, sender);
         }
 
         public void HandleReceivedPlayerSpawnData(NetPeer sender, NetDataReader reader, int senderID)
@@ -660,7 +682,7 @@ namespace DAGServer
                 spawnDataMessage.Put(playerPosY);
             }
 
-            SendMessageToAllOthers(spawnDataMessage);
+            SendMessageToAllOthers(spawnDataMessage, sender);
         }
 
         public void HandleReceivedItemCreation(NetPeer sender, NetDataReader reader, int senderID)
@@ -676,7 +698,7 @@ namespace DAGServer
             itemCreationMessage.Put(xPos);
             itemCreationMessage.Put(yPos);
 
-            SendMessageToAllOthers(itemCreationMessage);
+            SendMessageToAllOthers(itemCreationMessage, sender);
         }
 
         public void HandleReceivedItemDeletion(NetPeer sender, NetDataReader reader, int senderID)
@@ -688,7 +710,7 @@ namespace DAGServer
             itemDeletionMessage.Put(senderID);
             itemDeletionMessage.Put(index);
 
-            SendMessageToAllOthers(itemDeletionMessage);
+            SendMessageToAllOthers(itemDeletionMessage, sender);
         }
 
         public void HandleReceivedEnemyListSync(NetPeer sender, NetDataReader reader, int senderID)
@@ -715,13 +737,13 @@ namespace DAGServer
                 enemySyncMessage.Put(posY);
             }
 
-            SendMessageToAllOthers(enemySyncMessage);
+            SendMessageToAllOthers(enemySyncMessage, sender);
         }
 
-        public static void SendMessageToAllOthers(NetDataWriter writer, /*NetPeer senderConnection,*/ DeliveryMethod deliveryMethod = DeliveryMethod.ReliableOrdered)       //Data sending
+        public static void SendMessageToAllOthers(NetDataWriter writer, NetPeer senderConnection, DeliveryMethod deliveryMethod = DeliveryMethod.ReliableOrdered)       //Data sending
         {
             Logger.DebugInfo("Sent a " + (ServerPacket.ServerPacketType)writer.Data[0] + " packet");
-            serverManager.SendToAll(writer, deliveryMethod);
+            serverManager.SendToAll(writer, deliveryMethod, senderConnection);
         }
 
         public static void SendMessageBackToSender(NetDataWriter writer, NetPeer sender, DeliveryMethod deliveryMethod = DeliveryMethod.ReliableOrdered)      //Data retrieval

@@ -5,10 +5,11 @@
         public enum ServerPacketType        //Packets that the server sends
         {
             GivePing,
+            GiveID,
             GiveClientInfo,
             GiveClientCharacterType,
             GiveAllClientData,
-            GiveLobbyData,
+            GiveAllPlayerData,
             GivePlayerDataDeletion,
             GiveClientMovementInformation,
             SendPlayerVariableData,
@@ -31,10 +32,11 @@
         public enum ClientPacketType        //Packets that the clients send
         {
             SendPing,
+            RequestID,
             SendClientInfo,
             SendClientCharacterType,
             RequestAllClientData,
-            RequestLobbyData,
+            RequestAllPlayerData,
             RequestPlayerDataDeletion,
             SendMovementInformation,
             SendPlayerVariableData,
