@@ -44,7 +44,7 @@ namespace DAGServer
             if (!Server.PacketLogs)
                 return;
 
-            Console.ForegroundColor = ConsoleColor.Gray;
+            Console.ForegroundColor = ConsoleColor.DarkGray;
             Console.WriteLine("[" + DateTime.Now + "]: " + "Received " + packetType + " packet.");
             Console.ResetColor();
         }
@@ -54,8 +54,20 @@ namespace DAGServer
             if (!Server.PacketLogs)
                 return;
 
-            Console.ForegroundColor = ConsoleColor.White;
+            Console.ForegroundColor = ConsoleColor.DarkGray;
             Console.WriteLine("[" + DateTime.Now + "]: " + "Sent " + (ServerPacket.ServerPacketType)packet.Data[0] + " packet.");
+            Console.ResetColor();
+        }
+
+        public static void LogCustomMessage(string message, ConsoleColor color = ConsoleColor.White, bool showDateTime = false)
+        {
+            string output = "";
+            if (showDateTime)
+                output = "[" + DateTime.Now + "]: ";
+            output += message;
+
+            Console.ForegroundColor = color;
+            Console.WriteLine(message);
             Console.ResetColor();
         }
     }

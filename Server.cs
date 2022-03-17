@@ -1,9 +1,11 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using LiteNetLib;
 using LiteNetLib.Utils;
+using Mono.Nat;
 using static DAGServer.ServerData;
 
 namespace DAGServer
@@ -30,12 +32,26 @@ namespace DAGServer
 
         public void CreateNewServer()
         {
-            Logger.Info("Creating Server...");
+            Logger.LogCustomMessage("Enable UPnP? Y/N");
+            Logger.LogCustomMessage("Warning: UPnP is a protocol that allows clients to bypass all protections against invalid data in order to create an environment where all packets can arrive. " +
+                "\nIt should only be used when connecting to trustworthy clients. If you are using this option to connect to untrusted people over the Internet, it is at your own risk.", ConsoleColor.Red);
+
+            Logger.LogCustomMessage("UPnP not supported.", ConsoleColor.DarkBlue, true);
+            /*ConsoleKeyInfo key = Console.ReadKey();
+            if (key.Key == ConsoleKey.Y)
+            {
+                UPnPManager.InitializeUPnP();
+                Logger.LogCustomMessage("UPnP Activated.", ConsoleColor.Blue);
+                Logger.LogCustomMessage("Hosting on: \nIP: " + UPnPManager.connectedDevices[0].GetExternalIP() + "\nPort: " + NetworkPort + "\n", ConsoleColor.Blue);
+            }*/
+
+            Logger.Info("\nCreating Server...");
 
             serverListener = new EventBasedNetListener();
             serverManager = new NetManager(serverListener);
             serverManager.UpdateTime = 15;
             serverManager.NatPunchEnabled = true;
+            serverManager.AutoRecycle = true;
 
             serverManager.Start(NetworkPort);
 
@@ -179,6 +195,10 @@ namespace DAGServer
 
                 case ServerPacket.ClientPacketType.SendWorldArray:
                     HandleWorldData(peer, reader, senderID);
+                    break;
+
+                case ServerPacket.ClientPacketType.SendUpdatedMapObject:
+                    HandleUpdatedMapObject(peer, reader, senderID);
                     break;
 
                 case ServerPacket.ClientPacketType.SendNewEnemyInfo:
@@ -511,6 +531,25 @@ namespace DAGServer
             Logger.UserFriendlyInfo("Created World of [" + width + ", " + height + "].");
         }
 
+        public void HandleUpdatedMapObject(NetPeer sender, NetDataReader reader, int senderID)
+        {
+            int objectIndex = reader.GetInt();
+            int posX = reader.GetInt();
+            int posY = reader.GetInt();
+            byte info1 = reader.GetByte();
+            byte info2 = reader.GetByte();
+
+            NetDataWriter mapObjectMessage = new NetDataWriter();
+            mapObjectMessage.Put((byte)ServerPacket.ServerPacketType.SendUpdatedMapObject);
+            mapObjectMessage.Put(senderID);
+            mapObjectMessage.Put(objectIndex);
+            mapObjectMessage.Put(posX);
+            mapObjectMessage.Put(posY);
+            mapObjectMessage.Put(info1);
+            mapObjectMessage.Put(info2);
+            SendMessageToAllOthers(mapObjectMessage, sender);
+        }
+
         public void HandleNewEnemyInfo(NetPeer sender, NetDataReader reader, int senderID)
         {
             byte enemyType = reader.GetByte();
@@ -690,6 +729,8 @@ namespace DAGServer
             byte itemType = reader.GetByte();
             int xPos = reader.GetInt();
             int yPos = reader.GetInt();
+            float xVel = reader.GetFloat();
+            float yVel = reader.GetFloat();
 
             NetDataWriter itemCreationMessage = new NetDataWriter();
             itemCreationMessage.Put((byte)ServerPacket.ServerPacketType.SendNewItemCreation);
@@ -697,6 +738,8 @@ namespace DAGServer
             itemCreationMessage.Put(itemType);
             itemCreationMessage.Put(xPos);
             itemCreationMessage.Put(yPos);
+            itemCreationMessage.Put(xVel);
+            itemCreationMessage.Put(yVel);
 
             SendMessageToAllOthers(itemCreationMessage, sender);
         }
