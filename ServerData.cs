@@ -4,8 +4,8 @@
     {
         public struct ClientData
         {
+            public byte clientID;
             public string clientName;
-            public int clientID;
             public int chosenCharacterType;
         }
 
