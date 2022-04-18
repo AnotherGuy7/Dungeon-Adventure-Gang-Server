@@ -1,5 +1,6 @@
 ﻿using LiteNetLib;
 using LiteNetLib.Utils;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
@@ -132,119 +133,127 @@ namespace DAGServer
 
         public void HandleDataMessages(NetPeer peer, NetPacketReader reader, DeliveryMethod deliveryMethod)
         {
-            ServerPacket.ClientPacketType messageDataType = (ServerPacket.ClientPacketType)reader.GetByte();
-            byte senderID = reader.GetByte();
-            Logger.LogPacketReceieve(messageDataType);
-
-            switch (messageDataType)
+            try
             {
-                case ServerPacket.ClientPacketType.SendPing:
-                    HandleReceivedPingPacket(peer, reader, senderID);
-                    break;
+                ServerPacket.ClientPacketType messageDataType = (ServerPacket.ClientPacketType)reader.GetByte();
+                byte senderID = reader.GetByte();
+                Logger.LogPacketReceieve(messageDataType);
 
-                case ServerPacket.ClientPacketType.RequestID:       //Gives the peer who requested it an ID
-                    HandleIDRequest(peer, reader, senderID);
-                    break;
+                switch (messageDataType)
+                {
+                    case ServerPacket.ClientPacketType.SendPing:
+                        HandleReceivedPingPacket(peer, reader, senderID);
+                        break;
 
-                case ServerPacket.ClientPacketType.SendClientInfo:
-                    HandleNewClientInfo(peer, reader, senderID);
-                    break;
+                    case ServerPacket.ClientPacketType.RequestID:       //Gives the peer who requested it an ID
+                        HandleIDRequest(peer, reader, senderID);
+                        break;
 
-                case ServerPacket.ClientPacketType.SendClientCharacterType:
-                    HandleClientCharacterType(peer, reader, senderID);
-                    break;
+                    case ServerPacket.ClientPacketType.SendClientInfo:
+                        HandleNewClientInfo(peer, reader, senderID);
+                        break;
 
-                case ServerPacket.ClientPacketType.RequestAllClientData:
-                    HandleAllClientsDataRequest(peer, reader, senderID);
-                    break;
+                    case ServerPacket.ClientPacketType.SendClientCharacterType:
+                        HandleClientCharacterType(peer, reader, senderID);
+                        break;
 
-                /*case ServerPacket.ClientPacketType.RequestAllPlayerData:        //Returns the data of all current players in the game.
-                    HandleAllPlayersDataRequest(peer, reader, senderID);
-                    break;*/
+                    case ServerPacket.ClientPacketType.RequestAllClientData:
+                        HandleAllClientsDataRequest(peer, reader, senderID);
+                        break;
 
-                case ServerPacket.ClientPacketType.RequestPlayerDataDeletion:
-                    HandlePlayerDataDeletionRequest(peer, reader, senderID);
-                    break;
+                    /*case ServerPacket.ClientPacketType.RequestAllPlayerData:        //Returns the data of all current players in the game.
+                        HandleAllPlayersDataRequest(peer, reader, senderID);
+                        break;*/
 
-                case ServerPacket.ClientPacketType.SendMovementInformation:      //Sends the peer's position to all peers that aren't the sender
-                    HandleClientMovementInformation(peer, reader, senderID);
-                    break;
+                    case ServerPacket.ClientPacketType.RequestPlayerDataDeletion:
+                        HandlePlayerDataDeletionRequest(peer, reader, senderID);
+                        break;
 
-                case ServerPacket.ClientPacketType.SendPlayerVariableData:
-                    HandleReceivedPlayerVariableData(peer, reader, senderID);
-                    break;
+                    case ServerPacket.ClientPacketType.SendMovementInformation:      //Sends the peer's position to all peers that aren't the sender
+                        HandleClientMovementInformation(peer, reader, senderID);
+                        break;
 
-                /*case ServerPacket.ClientPacketType.SendPlayerInfo:      //Send the peer's player information to all peers that aren't the sender
-                    HandlePlayerInfo(peer, reader, senderID);
-                    break;*/
+                    case ServerPacket.ClientPacketType.SendPlayerVariableData:
+                        HandleReceivedPlayerVariableData(peer, reader, senderID);
+                        break;
 
-                case ServerPacket.ClientPacketType.SendSound:
-                    HandleSentSoundData(peer, reader, senderID);
-                    break;
+                    /*case ServerPacket.ClientPacketType.SendPlayerInfo:      //Send the peer's player information to all peers that aren't the sender
+                        HandlePlayerInfo(peer, reader, senderID);
+                        break;*/
 
-                case ServerPacket.ClientPacketType.SendStringMessageToOtherPlayers:
-                    HandleSentMessage(peer, reader, senderID);
-                    break;
+                    case ServerPacket.ClientPacketType.SendSound:
+                        HandleSentSoundData(peer, reader, senderID);
+                        break;
 
-                case ServerPacket.ClientPacketType.SendWorldArray:
-                    HandleWorldData(peer, reader, senderID);
-                    break;
+                    case ServerPacket.ClientPacketType.SendStringMessageToOtherPlayers:
+                        HandleSentMessage(peer, reader, senderID);
+                        break;
 
-                case ServerPacket.ClientPacketType.SendUpdatedMapObject:
-                    HandleUpdatedMapObject(peer, reader, senderID);
-                    break;
+                    case ServerPacket.ClientPacketType.SendWorldArray:
+                        HandleWorldData(peer, reader, senderID);
+                        break;
 
-                case ServerPacket.ClientPacketType.SendMapObjectDestruction:
-                    HandleDestroyedMapObject(peer, reader, senderID);
-                    break;
+                    case ServerPacket.ClientPacketType.SendUpdatedMapObject:
+                        HandleUpdatedMapObject(peer, reader, senderID);
+                        break;
 
-                case ServerPacket.ClientPacketType.SendNewEnemyInfo:
-                    HandleNewEnemyInfo(peer, reader, senderID);
-                    break;
+                    case ServerPacket.ClientPacketType.SendMapObjectDestruction:
+                        HandleDestroyedMapObject(peer, reader, senderID);
+                        break;
 
-                case ServerPacket.ClientPacketType.SendEnemyVariableData:
-                    HandleSentEnemyVariableData(peer, reader, senderID);
-                    break;
+                    case ServerPacket.ClientPacketType.SendNewEnemyInfo:
+                        HandleNewEnemyInfo(peer, reader, senderID);
+                        break;
 
-                case ServerPacket.ClientPacketType.SendEnemyAilment:
-                    HandleSentEnemyAilmentUpdate(peer, reader, senderID);
-                    break;
+                    case ServerPacket.ClientPacketType.SendEnemyVariableData:
+                        HandleSentEnemyVariableData(peer, reader, senderID);
+                        break;
 
-                case ServerPacket.ClientPacketType.SendEnemyDeletion:
-                    HandleSentEnemyDeletion(peer, reader, senderID);
-                    break;
+                    case ServerPacket.ClientPacketType.SendEnemyAilment:
+                        HandleSentEnemyAilmentUpdate(peer, reader, senderID);
+                        break;
 
-                case ServerPacket.ClientPacketType.SendNewProjectileInfo:
-                    HandleNewProjectileInfo(peer, reader, senderID);
-                    break;
+                    case ServerPacket.ClientPacketType.SendEnemyDeletion:
+                        HandleSentEnemyDeletion(peer, reader, senderID);
+                        break;
 
-                case ServerPacket.ClientPacketType.SendProjectileVariableData:
-                    HandleSentProjectileVariableData(peer, reader, senderID);
-                    break;
+                    case ServerPacket.ClientPacketType.SendNewProjectileInfo:
+                        HandleNewProjectileInfo(peer, reader, senderID);
+                        break;
 
-                case ServerPacket.ClientPacketType.SendPlayerUsedItem:
-                    HandlePlayerItemUsage(peer, reader, senderID);
-                    break;
+                    case ServerPacket.ClientPacketType.SendProjectileVariableData:
+                        HandleSentProjectileVariableData(peer, reader, senderID);
+                        break;
 
-                case ServerPacket.ClientPacketType.SendDoneLoading:
-                    HandleReceivedDoneLoading(peer, reader, senderID);
-                    break;
+                    case ServerPacket.ClientPacketType.SendPlayerUsedItem:
+                        HandlePlayerItemUsage(peer, reader, senderID);
+                        break;
 
-                case ServerPacket.ClientPacketType.SendAllPlayerSpawnData:
-                    HandleReceivedPlayerSpawnData(peer, reader, senderID);
-                    break;
+                    case ServerPacket.ClientPacketType.SendDoneLoading:
+                        HandleReceivedDoneLoading(peer, reader, senderID);
+                        break;
 
-                case ServerPacket.ClientPacketType.SendNewItemCreation:
-                    HandleReceivedItemCreation(peer, reader, senderID);
-                    break;
+                    case ServerPacket.ClientPacketType.SendAllPlayerSpawnData:
+                        HandleReceivedPlayerSpawnData(peer, reader, senderID);
+                        break;
 
-                case ServerPacket.ClientPacketType.SendItemDeletion:
-                    HandleReceivedItemDeletion(peer, reader, senderID);
-                    break;
+                    case ServerPacket.ClientPacketType.SendNewItemCreation:
+                        HandleReceivedItemCreation(peer, reader, senderID);
+                        break;
 
-                case ServerPacket.ClientPacketType.SendEnemyListForSync:
-                    HandleReceivedEnemyListSync(peer, reader, senderID);
-                    break;
+                    case ServerPacket.ClientPacketType.SendItemDeletion:
+                        HandleReceivedItemDeletion(peer, reader, senderID);
+                        break;
+
+                    case ServerPacket.ClientPacketType.SendEnemyListForSync:
+                        HandleReceivedEnemyListSync(peer, reader, senderID);
+                        break;
+                }
+            }
+            catch (Exception exception)
+            {
+                Logger.CreateFileLogs(exception);
+                Logger.Error("Error at:" + exception.StackTrace + "\nMessage: " + exception.Message + "\nSource: " + exception.Source);
             }
         }
 
@@ -361,6 +370,7 @@ namespace DAGServer
 
             SendMessageToAllOthers(playerDataDeletionMessage, sender);
             Logger.UserFriendlyInfo(playerName + " has been removed from the game.");
+            serverManager.DisconnectPeer(sender);
         }
 
         public void HandleClientMovementInformation(NetPeer sender, NetDataReader reader, byte senderID)
