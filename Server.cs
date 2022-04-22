@@ -24,6 +24,8 @@ namespace DAGServer
         public static EventBasedNetListener serverListener;
         public static Dictionary<int, ClientData> clientData = new Dictionary<int, ClientData>();
         //public static Dictionary<int, PlayerData> playerData = new Dictionary<int, PlayerData>();
+        public static bool gameCurrentlyActive = false;
+        public static bool clientConnecting = false;
 
         public static int amountOfConnectedPlayers = 0;
         public static int[] dungeonEnemies = new int[255];
@@ -90,9 +92,22 @@ namespace DAGServer
                 request.Reject();
                 return;
             }
+            if (gameCurrentlyActive)
+            {
+                Logger.Error("Client Connection Request denied.\n      Reason: Game currently active.");
+                request.Reject();
+                return;
+            }
+            if (clientConnecting)
+            {
+                Logger.Error("Client Connection Request denied.\n      Reason: A different client is already attempting to connect to the server.");
+                request.Reject();
+                return;
+            }
 
             request.Accept();
             amountOfConnectedPlayers++;
+            //clientConnecting = true;
             Logger.Info("Client Connection Request Accepted.");
         }
 
@@ -128,6 +143,7 @@ namespace DAGServer
 
             SendMessageBackToSender(newClientIDAndLobbyInfo, peer);
             Logger.Info("New Client connected. Assigned ID of: " + newClientID);*/
+            clientConnecting = false;
             Logger.Info("New Client connected.");
         }
 
@@ -366,7 +382,23 @@ namespace DAGServer
             playerDataDeletionMessage.Put(senderID);
 
             string playerName = clientData[senderID].clientName;
-            clientData.Remove(senderID);
+
+            Dictionary<int, ClientData> newClientData = new Dictionary<int, ClientData>();
+            int[] clientDataKeys = clientData.Keys.ToArray();
+            for (int i = 0; i < clientDataKeys.Length; i++)
+            {
+                if (clientDataKeys[i] < senderID)
+                {
+                    newClientData.Add(clientDataKeys[i], clientData[i]);
+                }
+                else if (clientDataKeys[i] > senderID)
+                {
+                    ClientData transferredClientData = clientData[i];
+                    transferredClientData.clientID = (byte)clientDataKeys[i - 1];
+                    newClientData.Add(clientDataKeys[i - 1], transferredClientData);
+                }
+            }
+            clientData = newClientData;
 
             SendMessageToAllOthers(playerDataDeletionMessage, sender);
             Logger.UserFriendlyInfo(playerName + " has been removed from the game.");
@@ -525,6 +557,7 @@ namespace DAGServer
                 }
             }
 
+            gameCurrentlyActive = true;
             SendMessageToAllOthers(worldDataMessage, sender);
             Logger.UserFriendlyInfo("Created World of [" + width + ", " + height + "].");
         }
