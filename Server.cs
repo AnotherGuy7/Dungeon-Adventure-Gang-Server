@@ -39,7 +39,6 @@ namespace DAGServer
             serverListener = new EventBasedNetListener();
             serverManager = new NetManager(serverListener);
             serverManager.UpdateTime = 15;
-            serverManager.NatPunchEnabled = true;
             serverManager.AutoRecycle = true;
 
             serverManager.Start(NetworkPort);
@@ -86,7 +85,7 @@ namespace DAGServer
         public void ClientConnectRequest(ConnectionRequest request)
         {
             Logger.Info("New Client Connection Request received.");
-            if (serverManager.ConnectedPeersCount >= 4)
+            if (serverManager.ConnectedPeersCount >= MaximumLobbySize)
             {
                 Logger.Error("Client Connection Request denied.\n      Reason: Too many clients.");
                 request.Reject();
@@ -113,36 +112,6 @@ namespace DAGServer
 
         public void ClientConnected(NetPeer peer)       //Upon client connections, we send back lobby data and new client info.
         {
-            /*NetDataWriter newClientIDAndLobbyInfo = new NetDataWriter();
-            newClientIDAndLobbyInfo.Put((byte)ServerPacket.ServerPacketType.GiveLobbyData);
-            newClientIDAndLobbyInfo.Put(0);
-
-            byte newClientID = (byte)amountOfConnectedPlayers;
-            newClientIDAndLobbyInfo.Put(newClientID);
-
-            List<ClientData> otherClientData = clientData.Values.ToList();
-            if (amountOfConnectedPlayers > 1)
-            {
-                NetDataWriter clientInfoMessage = new NetDataWriter();
-                clientInfoMessage.Put((byte)ServerPacket.ServerPacketType.GiveClientInfo);
-                clientInfoMessage.Put(0);
-                clientInfoMessage.Put(newClientID);
-                clientInfoMessage.Put(clientData[newClientID].clientName);
-
-                SendMessageToAllOthers(clientInfoMessage);
-            }
-            otherClientData.RemoveAt(newClientID - 1);     //Removing yourself from the lobby stuff
-
-            newClientIDAndLobbyInfo.Put((byte)otherClientData.Count);
-            for (int i = 0; i < otherClientData.Count; i++)
-            {
-                newClientIDAndLobbyInfo.Put((byte)otherClientData[i].clientID);
-                newClientIDAndLobbyInfo.Put(otherClientData[i].clientName);
-                newClientIDAndLobbyInfo.Put((byte)otherClientData[i].chosenCharacterType);
-            }
-
-            SendMessageBackToSender(newClientIDAndLobbyInfo, peer);
-            Logger.Info("New Client connected. Assigned ID of: " + newClientID);*/
             clientConnecting = false;
             Logger.Info("New Client connected.");
         }
@@ -177,10 +146,6 @@ namespace DAGServer
                         HandleAllClientsDataRequest(peer, reader, senderID);
                         break;
 
-                    /*case ServerPacket.ClientPacketType.RequestAllPlayerData:        //Returns the data of all current players in the game.
-                        HandleAllPlayersDataRequest(peer, reader, senderID);
-                        break;*/
-
                     case ServerPacket.ClientPacketType.RequestPlayerDataDeletion:
                         HandlePlayerDataDeletionRequest(peer, reader, senderID);
                         break;
@@ -192,10 +157,6 @@ namespace DAGServer
                     case ServerPacket.ClientPacketType.SendPlayerVariableData:
                         HandleReceivedPlayerVariableData(peer, reader, senderID);
                         break;
-
-                    /*case ServerPacket.ClientPacketType.SendPlayerInfo:      //Send the peer's player information to all peers that aren't the sender
-                        HandlePlayerInfo(peer, reader, senderID);
-                        break;*/
 
                     case ServerPacket.ClientPacketType.SendSound:
                         HandleSentSoundData(peer, reader, senderID);
@@ -357,24 +318,6 @@ namespace DAGServer
             SendMessageBackToSender(clientDataMessage, sender);
         }
 
-        /*public void HandleAllPlayersDataRequest(NetPeer sender, NetDataReader reader, byte senderID)
-        {
-            NetDataWriter playerDataMessage = new NetDataWriter();
-            playerDataMessage.Put((byte)ServerPacket.ServerPacketType.GiveAllPlayerData);
-            playerDataMessage.Put(senderID);
-            playerDataMessage.Put(playerData.Count);
-
-            PlayerData[] playerDataArray = playerData.Values.ToArray();
-            for (int i = 0; i < playerDataArray.Length; i++)        //The data has to be read by index cause we don't know how many players there are
-            {
-                playerDataMessage.Put(playerDataArray[i].playerID);
-                playerDataMessage.Put(playerDataArray[i].name);
-                playerDataMessage.Put(playerDataArray[i].health);
-            }
-
-            SendMessageBackToSender(playerDataMessage, sender);
-        }*/
-
         public void HandlePlayerDataDeletionRequest(NetPeer sender, NetDataReader reader, byte senderID)
         {
             NetDataWriter playerDataDeletionMessage = new NetDataWriter();
@@ -443,33 +386,6 @@ namespace DAGServer
             SendMessageToAllOthers(enemyDataMessage, sender);
         }
 
-        /*public void HandlePlayerInfo(NetPeer sender, NetDataReader reader, byte senderID)
-        {
-            PlayerData newPlayerData = new PlayerData();
-            string playerName = reader.GetString();
-            int playerHealth = reader.GetInt();
-            int playerID = reader.GetInt();
-
-            playerData.Add(playerID, newPlayerData);
-            playerData[playerID].name = playerName;
-            playerData[playerID].health = playerHealth;
-            playerData[playerID].playerID = playerID;
-
-
-            if (serverManager.Connections.Count < 2)
-                return;
-
-
-            NetDataWriter playerInfoMessage = new NetDataWriter();
-            playerInfoMessage.Put((byte)ServerPacket.ServerPacketType.GivePlayerInfo);
-            playerInfoMessage.Put(senderID);
-            playerInfoMessage.Put(playerName);
-            playerInfoMessage.Put(playerHealth);
-            playerInfoMessage.Put(playerID);
-
-            SendMessageToAllOthers(playerInfoMessage);
-        }*/
-
         public void HandleSentSoundData(NetPeer sender, NetDataReader reader, byte senderID)
         {
             int soundType = reader.GetInt();
@@ -509,14 +425,6 @@ namespace DAGServer
         public void HandleWorldData(NetPeer sender, NetDataReader reader, byte senderID)
         {
             NetDataWriter worldDataMessage = new NetDataWriter();
-            /*worldDataMessage.Data = reader.Data;
-            worldDataMessage.Data[0] = (byte)ServerPacket.ServerPacketType.SendWorldArrayToAll;*/       //Doesn't work for some reason
-
-            /*worldDataMessage.Data = new byte[reader.Data.Length];
-            reader.Data.CopyTo(worldDataMessage.Data, 0);
-            worldDataMessage.Data[0] = (byte)ServerPacket.ServerPacketType.SendWorldArrayToAll;
-            worldDataMessage.Data[1] = Convert.ToByte(sender); */
-
             worldDataMessage.Put((byte)ServerPacket.ServerPacketType.SendWorldArrayToAll);
             worldDataMessage.Put(senderID);
 
@@ -601,19 +509,6 @@ namespace DAGServer
             byte enemyType = reader.GetByte();
             float posX = reader.GetFloat();
             float posY = reader.GetFloat();
-            //byte enemyIndex = reader.GetByte();
-
-            /*int objectInfoLength = 0;
-            byte[] objectInfo = null;
-            int objectExtraInfoLength = 0;
-            byte[] objectExtraInfo = null;
-            if (bodyType == 1)
-            {
-                objectInfoLength = reader.GetInt();
-                objectInfo = reader.ReadBytes(objectInfoLength);
-                objectExtraInfoLength = reader.GetInt();
-                objectExtraInfo = reader.ReadBytes(objectExtraInfoLength);
-            }*/
 
             NetDataWriter newEnemyDataMessage = new NetDataWriter();
             newEnemyDataMessage.Put((byte)ServerPacket.ServerPacketType.SendNewEnemyInfo);
@@ -621,14 +516,6 @@ namespace DAGServer
             newEnemyDataMessage.Put(enemyType);
             newEnemyDataMessage.Put(posX);
             newEnemyDataMessage.Put(posY);
-            //newEnemyDataMessage.Put(enemyIndex);
-            /*if (bodyType == 1)
-            {
-                reader.Put(objectInfoLength);
-                reader.Put(objectInfo);
-                reader.Put(objectExtraInfoLength);
-                reader.Put(objectExtraInfo);
-            }*/
 
             SendMessageToAllOthers(newEnemyDataMessage, sender);
         }
@@ -860,29 +747,5 @@ namespace DAGServer
             Logger.DebugInfo("Reflected a " + (ServerPacket.ServerPacketType)writer.Data[0] + " packet");
             sender.Send(writer, deliveryMethod);
         }
-
-        /*public static void SendMessageToAllOthersOnInterval(NetDataWriter writer, NetPeer senderConnection, int interval, DeliveryMethod deliveryMethod = DeliveryMethod.ReliableOrdered)       //Data sending
-        {
-            List<NetPeer> otherConnectionsList = serverManager.Connections;
-            otherConnectionsList.Remove(senderConnection);
-
-            int[] clientDataKeys = clientData.Keys.ToArray();
-            if (otherConnectionsList.Count >= 1)
-            {
-                int timer = 0;
-                int senderIndex = 0;
-                while (senderIndex != otherConnectionsList.Count)
-                {
-                    timer++;
-                    if (timer >= interval)
-                    {
-                        timer = 0;
-                        serverManager.Send(writer, otherConnectionsList[senderIndex], deliveryMethod, 0);
-                        Logger.Info("Shot packet to " + clientData[clientDataKeys[senderIndex]].clientName);
-                        senderIndex++;
-                    }
-                }
-            }
-        }*/
     }
 }
