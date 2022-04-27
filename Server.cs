@@ -225,6 +225,14 @@ namespace DAGServer
                     case ServerPacket.ClientPacketType.SendEnemyListForSync:
                         HandleReceivedEnemyListSync(peer, reader, senderID);
                         break;
+
+                    case ServerPacket.ClientPacketType.requestenemydata:
+                        handlerequestenemydata(peer, reader, senderID);
+                        break;
+
+                    case ServerPacket.ClientPacketType.sendenemysync:
+                        handlesendenemydata(peer, reader, senderID);
+                        break;
                 }
             }
             catch (Exception exception)
@@ -507,6 +515,7 @@ namespace DAGServer
         public void HandleNewEnemyInfo(NetPeer sender, NetDataReader reader, byte senderID)
         {
             byte enemyType = reader.GetByte();
+            int id = reader.GetInt();
             float posX = reader.GetFloat();
             float posY = reader.GetFloat();
 
@@ -514,6 +523,7 @@ namespace DAGServer
             newEnemyDataMessage.Put((byte)ServerPacket.ServerPacketType.SendNewEnemyInfo);
             newEnemyDataMessage.Put(senderID);
             newEnemyDataMessage.Put(enemyType);
+            newEnemyDataMessage.Put(id);
             newEnemyDataMessage.Put(posX);
             newEnemyDataMessage.Put(posY);
 
@@ -522,7 +532,7 @@ namespace DAGServer
 
         public void HandleSentEnemyVariableData(NetPeer sender, NetDataReader reader, byte senderID)
         {
-            int objectIndex = reader.GetInt();
+            int id = reader.GetInt();
             byte enemyType = reader.GetByte();
             byte variableIndex = reader.GetByte();
             int value1 = reader.GetInt();
@@ -534,7 +544,7 @@ namespace DAGServer
             NetDataWriter enemyDataMessage = new NetDataWriter();
             enemyDataMessage.Put((byte)ServerPacket.ServerPacketType.SendEnemyVariableData);
             enemyDataMessage.Put(senderID);
-            enemyDataMessage.Put(objectIndex);
+            enemyDataMessage.Put(id);
             enemyDataMessage.Put(enemyType);
             enemyDataMessage.Put(variableIndex);
             enemyDataMessage.Put(value1);
@@ -546,7 +556,7 @@ namespace DAGServer
 
         public void HandleSentEnemyAilmentUpdate(NetPeer sender, NetDataReader reader, byte senderID)
         {
-            int objectIndex = reader.GetInt();
+            int id = reader.GetInt();
             byte ailmentIndex = reader.GetByte();
             byte ailmentType = reader.GetByte();
             byte ailmentStage = reader.GetByte();
@@ -554,7 +564,7 @@ namespace DAGServer
             NetDataWriter enemyAilmentMessage = new NetDataWriter();
             enemyAilmentMessage.Put((byte)ServerPacket.ServerPacketType.SendEnemyAilment);
             enemyAilmentMessage.Put(senderID);
-            enemyAilmentMessage.Put(objectIndex);
+            enemyAilmentMessage.Put(id);
             enemyAilmentMessage.Put(ailmentIndex);
             enemyAilmentMessage.Put(ailmentType);
             enemyAilmentMessage.Put(ailmentStage);
@@ -719,21 +729,66 @@ namespace DAGServer
             enemySyncMessage.Put(amountOfEnemies);
 
             dungeonEnemies = new int[amountOfEnemies];
-            for (int i = 0; i < amountOfEnemies; i++)
+
+            /*for (int i = 0; i < amountOfEnemies; i++)
             {
                 byte enemyType = reader.GetByte();
+                int id = reader.GetInt();
                 int health = reader.GetInt();
                 int posX = reader.GetInt();
                 int posY = reader.GetInt();
                 dungeonEnemies[i] = enemyType;
 
                 enemySyncMessage.Put(enemyType);
+                enemySyncMessage.Put(id);
                 enemySyncMessage.Put(health);
                 enemySyncMessage.Put(posX);
                 enemySyncMessage.Put(posY);
+            }*/
+
+            for (var i = 0; i < amountOfEnemies; i++)
+            {
+                int id = reader.GetInt();
+                enemySyncMessage.Put(id);
             }
 
             SendMessageToAllOthers(enemySyncMessage, sender);
+        }
+
+        //Only requests the new data... If we have a network bottle neck we could look here
+        public void handlerequestenemydata(NetPeer sender, NetDataReader reader, byte senderid)
+        {
+            int id = reader.GetInt();
+
+            NetDataWriter enemydatamessage = new NetDataWriter();
+            enemydatamessage.Put((byte)ServerPacket.ServerPacketType.sendenemydata);
+            enemydatamessage.Put(senderid);
+            enemydatamessage.Put(id);
+
+            SendMessageToAllOthers(enemydatamessage, sender);
+        }
+
+        //Only sends the new data... If we have a network bottle neck we could look here
+        public void handlesendenemydata(NetPeer sender, NetDataReader reader, byte senderid)
+        {
+            byte receiverid = reader.GetByte();
+            byte enemyType = reader.GetByte();
+            int id = reader.GetInt();
+            int health = reader.GetInt();
+            float posX = reader.GetFloat();
+            float posY = reader.GetFloat();
+
+            NetDataWriter enemydatamessage = new NetDataWriter();
+            enemydatamessage.Put((byte)ServerPacket.ServerPacketType.sendenemysync);
+            enemydatamessage.Put(senderid);
+            enemydatamessage.Put(receiverid);
+            enemydatamessage.Put(enemyType);
+            enemydatamessage.Put(id);
+            enemydatamessage.Put(health);
+            enemydatamessage.Put(posX);
+            enemydatamessage.Put(posY);
+
+            SendMessageToAllOthers(enemydatamessage, sender);
         }
 
         public static void SendMessageToAllOthers(NetDataWriter writer, NetPeer senderConnection, DeliveryMethod deliveryMethod = DeliveryMethod.ReliableOrdered)       //Data sending

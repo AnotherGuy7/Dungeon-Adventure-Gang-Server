@@ -28,7 +28,9 @@
             SendAllPlayerSpawnDataToOthers,
             SendNewItemCreation,
             SendItemDeletion,
-            ReceiveEnemyListSync
+            ReceiveEnemyListSync,
+            sendenemydata,
+            sendenemysync
         }
 
         public enum ClientPacketType        //Packets that the clients send
@@ -57,7 +59,9 @@
             SendAllPlayerSpawnData,
             SendNewItemCreation,
             SendItemDeletion,
-            SendEnemyListForSync
+            SendEnemyListForSync,
+            requestenemydata,
+            sendenemysync
         }
     }
 }
