@@ -226,12 +226,12 @@ namespace DAGServer
                         HandleReceivedEnemyListSync(peer, reader, senderID);
                         break;
 
-                    case ServerPacket.ClientPacketType.requestenemydata:
-                        handlerequestenemydata(peer, reader, senderID);
+                    case ServerPacket.ClientPacketType.RequestEnemyData:
+                        HandleEnemyDataRequest(peer, reader, senderID);
                         break;
 
-                    case ServerPacket.ClientPacketType.sendenemysync:
-                        handlesendenemydata(peer, reader, senderID);
+                    case ServerPacket.ClientPacketType.SendEnemyData:
+                        HandleReceivedEnemyData(peer, reader, senderID);
                         break;
                 }
             }
@@ -756,12 +756,12 @@ namespace DAGServer
         }
 
         //Only requests the new data... If we have a network bottle neck we could look here
-        public void handlerequestenemydata(NetPeer sender, NetDataReader reader, byte senderid)
+        public void HandleEnemyDataRequest(NetPeer sender, NetDataReader reader, byte senderid)
         {
             int id = reader.GetInt();
 
             NetDataWriter enemydatamessage = new NetDataWriter();
-            enemydatamessage.Put((byte)ServerPacket.ServerPacketType.sendenemydata);
+            enemydatamessage.Put((byte)ServerPacket.ServerPacketType.SendRequestedEnemyData);
             enemydatamessage.Put(senderid);
             enemydatamessage.Put(id);
 
@@ -769,7 +769,7 @@ namespace DAGServer
         }
 
         //Only sends the new data... If we have a network bottle neck we could look here
-        public void handlesendenemydata(NetPeer sender, NetDataReader reader, byte senderid)
+        public void HandleReceivedEnemyData(NetPeer sender, NetDataReader reader, byte senderid)
         {
             byte receiverid = reader.GetByte();
             byte enemyType = reader.GetByte();
@@ -779,7 +779,7 @@ namespace DAGServer
             float posY = reader.GetFloat();
 
             NetDataWriter enemydatamessage = new NetDataWriter();
-            enemydatamessage.Put((byte)ServerPacket.ServerPacketType.sendenemysync);
+            enemydatamessage.Put((byte)ServerPacket.ServerPacketType.SendEnemyData);
             enemydatamessage.Put(senderid);
             enemydatamessage.Put(receiverid);
             enemydatamessage.Put(enemyType);

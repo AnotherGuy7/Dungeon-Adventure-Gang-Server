@@ -29,8 +29,8 @@
             SendNewItemCreation,
             SendItemDeletion,
             ReceiveEnemyListSync,
-            sendenemydata,
-            sendenemysync
+            SendRequestedEnemyData,
+            SendEnemyData
         }
 
         public enum ClientPacketType        //Packets that the clients send
@@ -60,8 +60,8 @@
             SendNewItemCreation,
             SendItemDeletion,
             SendEnemyListForSync,
-            requestenemydata,
-            sendenemysync
+            RequestEnemyData,
+            SendEnemyData
         }
     }
 }
