@@ -461,11 +461,13 @@ namespace DAGServer
                     if (objType == 0)
                         continue;
 
+                    int index = reader.GetInt();
                     int posX = reader.GetInt();
                     int posY = reader.GetInt();
                     byte info1 = reader.GetByte();
                     byte info2 = reader.GetByte();
 
+                    worldDataMessage.Put(index);
                     worldDataMessage.Put(posX);
                     worldDataMessage.Put(posY);
                     worldDataMessage.Put(info1);
@@ -500,15 +502,11 @@ namespace DAGServer
         public void HandleDestroyedMapObject(NetPeer sender, NetDataReader reader, byte senderID)
         {
             int objectIndex = reader.GetInt();
-            int posX = reader.GetInt();
-            int posY = reader.GetInt();
 
             NetDataWriter mapObjectDestructionMessage = new NetDataWriter();
             mapObjectDestructionMessage.Put((byte)ServerPacket.ServerPacketType.SendMapObjectDestruction);
             mapObjectDestructionMessage.Put(senderID);
             mapObjectDestructionMessage.Put(objectIndex);
-            mapObjectDestructionMessage.Put(posX);
-            mapObjectDestructionMessage.Put(posY);
             SendMessageToAllOthers(mapObjectDestructionMessage, sender);
         }
 
@@ -593,8 +591,8 @@ namespace DAGServer
             byte type = reader.GetByte();
             int posX = reader.GetInt();
             int posY = reader.GetInt();
-            float velX = reader.GetInt();
-            float velY = reader.GetInt();
+            float velX = reader.GetFloat();
+            float velY = reader.GetFloat();
             byte owner = reader.GetByte();
             int index = reader.GetInt();
             int info1 = reader.GetInt();
