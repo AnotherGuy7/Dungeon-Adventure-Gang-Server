@@ -421,9 +421,9 @@ namespace DAGServer
             soundInfoMessage.Put(soundType);
             soundInfoMessage.Put(soundPosX);
             soundInfoMessage.Put(soundPosY);
+            soundInfoMessage.Put(soundTravelDistance);
             soundInfoMessage.Put(soundPitch);
             soundInfoMessage.Put(soundVolume);
-            soundInfoMessage.Put(soundTravelDistance);
 
 
             SendMessageToAllOthers(soundInfoMessage, sender);
