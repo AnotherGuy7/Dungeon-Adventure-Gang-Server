@@ -30,7 +30,8 @@
             SendItemDeletion,
             ReceiveEnemyListSync,
             SendRequestedEnemyData,
-            SendEnemyData
+            SendEnemyData,
+            SendEnemyDamage
         }
 
         public enum ClientPacketType        //Packets that the clients send
@@ -61,7 +62,8 @@
             SendItemDeletion,
             SendEnemyListForSync,
             RequestEnemyData,
-            SendEnemyData
+            SendEnemyData,
+            SendEnemyDamage
         }
     }
 }

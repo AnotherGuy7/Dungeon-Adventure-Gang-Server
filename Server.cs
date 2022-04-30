@@ -233,6 +233,10 @@ namespace DAGServer
                     case ServerPacket.ClientPacketType.SendEnemyData:
                         HandleReceivedEnemyData(peer, reader, senderID);
                         break;
+
+                    case ServerPacket.ClientPacketType.SendEnemyDamage:
+                        HandleReceivedEnemyDamage(peer, reader, senderID);
+                        break;
                 }
             }
             catch (Exception exception)
@@ -332,6 +336,11 @@ namespace DAGServer
             playerDataDeletionMessage.Put((byte)ServerPacket.ServerPacketType.GivePlayerDataDeletion);
             playerDataDeletionMessage.Put(senderID);
 
+            if(!clientData.ContainsKey(senderID))
+            {
+                return;
+            }
+
             string playerName = clientData[senderID].clientName;
 
             Dictionary<int, ClientData> newClientData = new Dictionary<int, ClientData>();
@@ -340,7 +349,10 @@ namespace DAGServer
             {
                 if (clientDataKeys[i] < senderID)
                 {
-                    newClientData.Add(clientDataKeys[i], clientData[i]);
+                    if(clientData.ContainsKey(i) && clientDataKeys.Length > i)
+                    {
+                        newClientData.Add(clientDataKeys[i], clientData[i]);
+                    }
                 }
                 else if (clientDataKeys[i] > senderID)
                 {
@@ -688,6 +700,7 @@ namespace DAGServer
         public void HandleReceivedItemCreation(NetPeer sender, NetDataReader reader, byte senderID)
         {
             byte itemType = reader.GetByte();
+            int id = reader.GetInt();
             int xPos = reader.GetInt();
             int yPos = reader.GetInt();
             float xVel = reader.GetFloat();
@@ -697,6 +710,7 @@ namespace DAGServer
             itemCreationMessage.Put((byte)ServerPacket.ServerPacketType.SendNewItemCreation);
             itemCreationMessage.Put(senderID);
             itemCreationMessage.Put(itemType);
+            itemCreationMessage.Put(id);
             itemCreationMessage.Put(xPos);
             itemCreationMessage.Put(yPos);
             itemCreationMessage.Put(xVel);
@@ -707,12 +721,12 @@ namespace DAGServer
 
         public void HandleReceivedItemDeletion(NetPeer sender, NetDataReader reader, byte senderID)
         {
-            byte index = reader.GetByte();
+            int id = reader.GetInt();
 
             NetDataWriter itemDeletionMessage = new NetDataWriter();
             itemDeletionMessage.Put((byte)ServerPacket.ServerPacketType.SendItemDeletion);
             itemDeletionMessage.Put(senderID);
-            itemDeletionMessage.Put(index);
+            itemDeletionMessage.Put(id);
 
             SendMessageToAllOthers(itemDeletionMessage, sender);
         }
@@ -787,6 +801,28 @@ namespace DAGServer
             enemydatamessage.Put(posY);
 
             SendMessageToAllOthers(enemydatamessage, sender);
+        }
+
+        public void HandleReceivedEnemyDamage(NetPeer sender, NetDataReader reader, byte senderid)
+        {
+            int id = reader.GetInt();
+            int damage = reader.GetInt();
+            float x = reader.GetFloat();
+            float y = reader.GetFloat();
+            float knockback = reader.GetFloat();
+            int immunitytimer = reader.GetInt();
+
+            NetDataWriter enemydamagemessage = new NetDataWriter();
+            enemydamagemessage.Put((byte)ServerPacket.ServerPacketType.SendEnemyData);
+            enemydamagemessage.Put(senderid);
+            enemydamagemessage.Put(id);
+            enemydamagemessage.Put(damage);
+            enemydamagemessage.Put(x);
+            enemydamagemessage.Put(y);
+            enemydamagemessage.Put(knockback);
+            enemydamagemessage.Put(immunitytimer);
+
+            SendMessageToAllOthers(enemydamagemessage, sender);
         }
 
         public static void SendMessageToAllOthers(NetDataWriter writer, NetPeer senderConnection, DeliveryMethod deliveryMethod = DeliveryMethod.ReliableOrdered)       //Data sending

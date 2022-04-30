@@ -28,7 +28,7 @@
             }
             serverShutDown = false;
             Server.serverManager.Stop();
-            Logger.UserFriendlyInfo("\nRestarting Server...");
+            Logger.UserFriendlyInfo("Restarting Server...");
             start();
         }
     }
