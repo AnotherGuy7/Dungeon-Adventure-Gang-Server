@@ -284,7 +284,6 @@ namespace DAGServer
             NetDataWriter clientInfoMessage = new NetDataWriter();
             clientInfoMessage.Put((byte)ServerPacket.ServerPacketType.GiveClientInfo);
             clientInfoMessage.Put(senderID);
-            clientInfoMessage.Put(clientID);
             clientInfoMessage.Put(clientName);
 
             SendMessageToAllOthers(clientInfoMessage, sender);
@@ -306,7 +305,6 @@ namespace DAGServer
             NetDataWriter clientCharacterTypeMessage = new NetDataWriter();
             clientCharacterTypeMessage.Put((byte)ServerPacket.ServerPacketType.GiveClientCharacterType);
             clientCharacterTypeMessage.Put(senderID);
-            clientCharacterTypeMessage.Put(clientID);
             clientCharacterTypeMessage.Put(clientCharacterType);
 
             SendMessageToAllOthers(clientCharacterTypeMessage, sender);
