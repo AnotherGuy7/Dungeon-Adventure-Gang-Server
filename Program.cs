@@ -1,4 +1,7 @@
-﻿namespace DAGServer
+﻿using System;
+using System.Timers;
+
+namespace DAGServer
 {
     public class Program
     {
@@ -20,16 +23,30 @@
             Server.gameProjectileExists = new int[1000];
             Server.gameCurrentlyActive = false;
             Server.clientConnecting = false;
-
             dagServer.CreateNewServer();
-            while (!serverShutDown)
+
+            var timer = new Timer();
+            timer.Interval = 1000 / 60;
+            timer.Elapsed += (sender, e) =>
             {
-                dagServer.SearchForMessages();
-            }
-            serverShutDown = false;
-            Server.serverManager.Stop();
-            Logger.UserFriendlyInfo("Restarting Server...");
-            start();
+                if(!serverShutDown)
+                {
+                    dagServer.SearchForMessages();
+                }else
+                {
+                    timer.Dispose();
+                    serverShutDown = false;
+                    Server.serverManager.Stop();
+                    Logger.UserFriendlyInfo("Restarting Server...");
+                    start();
+                }
+            };
+
+            timer.Start();
+
+            Console.ReadKey();
+
+            
         }
     }
 }
