@@ -45,8 +45,11 @@ namespace DAGServer
             timer.Start();
 
             Console.ReadKey();
+            Console.ReadKey();
+            Console.ReadKey();
+            Console.ReadKey();
 
-            
+
         }
     }
 }

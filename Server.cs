@@ -343,26 +343,31 @@ namespace DAGServer
 
             Dictionary<int, ClientData> newClientData = new Dictionary<int, ClientData>();
             int[] clientDataKeys = clientData.Keys.ToArray();
-            for (int i = 0; i < clientDataKeys.Length; i++)
+
+            foreach(ClientData client in clientData.Values)
             {
-                if (clientDataKeys[i] < senderID)
+                if (client.clientID < senderID)
                 {
-                    if(clientData.ContainsKey(i) && clientDataKeys.Length > i)
+                    if (clientData.ContainsKey(client.clientID) && clientDataKeys.Length > client.clientID)
                     {
-                        newClientData.Add(clientDataKeys[i], clientData[i]);
+                        newClientData.Add(client.clientID, client);
                     }
                 }
-                else if (clientDataKeys[i] > senderID)
+                else if (client.clientID > senderID)
                 {
-                    ClientData transferredClientData = clientData[i];
-                    transferredClientData.clientID = (byte)clientDataKeys[i - 1];
-                    newClientData.Add(clientDataKeys[i - 1], transferredClientData);
+                    ClientData transferredClientData = client;
+                    if(client.clientID > 1)
+                    {
+                        transferredClientData.clientID = (byte)(client.clientID - 1);
+                        newClientData.Add(client.clientID - 1, transferredClientData);
+                    }
                 }
             }
+
             clientData = newClientData;
 
             SendMessageToAllOthers(playerDataDeletionMessage, sender);
-            Logger.UserFriendlyInfo(playerName + " has been removed from the game.");
+            Logger.UserFriendlyInfo(playerName + " has been removed from the game." + clientData.Count);
             serverManager.DisconnectPeer(sender);
         }
 
