@@ -1,7 +1,10 @@
-﻿using Lidgren.Network;
+﻿using LiteNetLib;
+using LiteNetLib.Utils;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
+using System.Threading;
 using static DAGServer.ServerData;
 
 namespace DAGServer
@@ -14,715 +17,827 @@ namespace DAGServer
         public const int MaximumLobbySize = 4;
         public const bool DebugMode = false;     //Writes out all incoming and outgoing packets.
         public const bool ReadablePacketInfo = true;       //Writes out messages that normal people can understand.
+        public const bool PacketLogs = false;
 
-        public static NetServer mainServer;
+        public static NetPeer serverPeer;
+        public static NetManager serverManager;
+        public static EventBasedNetListener serverListener;
         public static Dictionary<int, ClientData> clientData = new Dictionary<int, ClientData>();
-        public static Dictionary<int, PlayerData> playerData = new Dictionary<int, PlayerData>();
+        //public static Dictionary<int, PlayerData> playerData = new Dictionary<int, PlayerData>();
+        public static bool gameCurrentlyActive = false;
+        public static bool clientConnecting = false;
 
+        public static int amountOfConnectedPlayers = 0;
         public static int[] dungeonEnemies = new int[255];
         public static int[] gameProjectileExists = new int[1000];
 
         public void CreateNewServer()
         {
+            //UPnPManager.InitializeUPnP();
             Logger.Info("Creating Server...");
-            NetPeerConfiguration config = new NetPeerConfiguration(ConfigurationApplicationName)
-            {
-                Port = NetworkPort,
-                MaximumConnections = 4,
-            };
 
-            string hostName = Dns.GetHostName(); // Retrive the Name of HOST
-            string myIP = Dns.GetHostEntry(hostName).AddressList[0].MapToIPv4().ToString() + " or " + Dns.GetHostEntry(hostName).AddressList[1].MapToIPv4().ToString();
-            /*
-            string routerIP = Dns.GetHostEntry(hostName).AddressList[0].ToString()
-            string localIP = Dns.GetHostEntry(hostName).AddressList[1].ToString()
-            */
+            serverListener = new EventBasedNetListener();
+            serverManager = new NetManager(serverListener);
+            serverManager.UpdateTime = 15;
+            serverManager.AutoRecycle = true;
 
-            mainServer = new NetServer(config);
-            mainServer.Start();
-            Logger.Info("Server created at: " + myIP + " (Port: " + NetworkPort + ")");
+            serverManager.Start(NetworkPort);
+
+            serverListener.NetworkReceiveEvent += HandleDataMessages;
+            serverListener.ConnectionRequestEvent += ClientConnectRequest;
+            serverListener.PeerConnectedEvent += ClientConnected;
+            serverListener.PeerDisconnectedEvent += ClientDisconnected;
+
+            Logger.Info("Server created at: " + GetPublicIp() + " (Port: " + NetworkPort + ")");
         }
 
-        public void SearchForMessages(NetPeer peer)
+        private void ClientDisconnected(NetPeer peer, DisconnectInfo disconnectInfo)
         {
-            NetIncomingMessage message = peer.ReadMessage();
+            Logger.Error("Client Disconnected. (Disconnection caused by " + disconnectInfo.Reason + ")");
+            amountOfConnectedPlayers--;
+            if (amountOfConnectedPlayers <= 0)
+            {
+                Logger.Error("All Clients disconnected. Server shutting down.");
+                Thread.Sleep(1000);
 
-            if (message == null)
+                Program.serverShutDown = true;
+            }
+        }
+
+        public static string GetPublicIp(string serviceUrl = "https://ipinfo.io/ip")            //https://stackoverflow.com/questions/3253701/get-public-external-ip-address 
+        {
+            try
+            {
+                string IP = new WebClient().DownloadString(serviceUrl);
+                return IPAddress.Parse(IP).ToString();
+            }
+            catch
+            {
+                return NetworkIP;
+            }
+        }
+
+        public void SearchForMessages()
+        {
+            serverManager.PollEvents();
+        }
+
+        public void ClientConnectRequest(ConnectionRequest request)
+        {
+            Logger.Info("New Client Connection Request received.");
+            if (serverManager.ConnectedPeersCount >= MaximumLobbySize)
+            {
+                Logger.Error("Client Connection Request denied.\n      Reason: Too many clients.");
+                request.Reject();
                 return;
-
-            switch (message.MessageType)
+            }
+            if (gameCurrentlyActive)
             {
-                case NetIncomingMessageType.StatusChanged:
-                    if (message.SenderConnection.Status == NetConnectionStatus.Connected)
-                        Logger.Info("New connection.");
-                    else if (message.SenderConnection.Status == NetConnectionStatus.Disconnected)
-                        Logger.Error("A connection has disconnected.");
-                    break;
-                case NetIncomingMessageType.DebugMessage:
-                    Logger.DebugInfo("Debug Packet received: " + message.ReadString());
-                    break;
-                case NetIncomingMessageType.Data:
-                    HandleDataMessages(message);
-                    break;
-                case NetIncomingMessageType.WarningMessage:
-                    Logger.Error("Warning Packet received: " + message.ReadString());
-                    break;
-                default:
-                    Logger.Error("Unknown packet type has arrived: " + message.MessageType);
-                    break;
+                Logger.Error("Client Connection Request denied.\n      Reason: Game currently active.");
+                request.Reject();
+                return;
+            }
+            if (clientConnecting)
+            {
+                Logger.Error("Client Connection Request denied.\n      Reason: A different client is already attempting to connect to the server.");
+                request.Reject();
+                return;
+            }
+
+            request.Accept();
+            amountOfConnectedPlayers++;
+            //clientConnecting = true;
+            Logger.Info("Client Connection Request Accepted.");
+        }
+
+        public void ClientConnected(NetPeer peer)       //Upon client connections, we send back lobby data and new client info.
+        {
+            clientConnecting = false;
+            Logger.Info("New Client connected.");
+        }
+
+        public void HandleDataMessages(NetPeer peer, NetPacketReader reader, DeliveryMethod deliveryMethod)
+        {
+            try
+            {
+                ServerPacket.ClientPacketType messageDataType = (ServerPacket.ClientPacketType)reader.GetByte();
+                byte senderID = reader.GetByte();
+                Logger.LogPacketReceieve(messageDataType);
+
+                switch (messageDataType)
+                {
+                    case ServerPacket.ClientPacketType.SendPing:
+                        HandleReceivedPingPacket(peer, reader, senderID);
+                        break;
+
+                    case ServerPacket.ClientPacketType.RequestID:       //Gives the peer who requested it an ID
+                        HandleIDRequest(peer, reader, senderID);
+                        break;
+
+                    case ServerPacket.ClientPacketType.SendClientInfo:
+                        HandleNewClientInfo(peer, reader, senderID);
+                        break;
+
+                    case ServerPacket.ClientPacketType.SendClientCharacterType:
+                        HandleClientCharacterType(peer, reader, senderID);
+                        break;
+
+                    case ServerPacket.ClientPacketType.RequestAllClientData:
+                        HandleAllClientsDataRequest(peer, reader, senderID);
+                        break;
+
+                    case ServerPacket.ClientPacketType.RequestPlayerDataDeletion:
+                        HandlePlayerDataDeletionRequest(peer, reader, senderID);
+                        break;
+
+                    case ServerPacket.ClientPacketType.SendMovementInformation:      //Sends the peer's position to all peers that aren't the sender
+                        HandleClientMovementInformation(peer, reader, senderID);
+                        break;
+
+                    case ServerPacket.ClientPacketType.SendPlayerVariableData:
+                        HandleReceivedPlayerVariableData(peer, reader, senderID);
+                        break;
+
+                    case ServerPacket.ClientPacketType.SendSound:
+                        HandleSentSoundData(peer, reader, senderID);
+                        break;
+
+                    case ServerPacket.ClientPacketType.SendStringMessageToOtherPlayers:
+                        HandleSentMessage(peer, reader, senderID);
+                        break;
+
+                    case ServerPacket.ClientPacketType.SendWorldArray:
+                        HandleWorldData(peer, reader, senderID);
+                        break;
+
+                    case ServerPacket.ClientPacketType.SendUpdatedMapObject:
+                        HandleUpdatedMapObject(peer, reader, senderID);
+                        break;
+
+                    case ServerPacket.ClientPacketType.SendMapObjectDestruction:
+                        HandleDestroyedMapObject(peer, reader, senderID);
+                        break;
+
+                    case ServerPacket.ClientPacketType.SendNewEnemyInfo:
+                        HandleNewEnemyInfo(peer, reader, senderID);
+                        break;
+
+                    case ServerPacket.ClientPacketType.SendEnemyVariableData:
+                        HandleSentEnemyVariableData(peer, reader, senderID);
+                        break;
+
+                    case ServerPacket.ClientPacketType.SendEnemyAilment:
+                        HandleSentEnemyAilmentUpdate(peer, reader, senderID);
+                        break;
+
+                    case ServerPacket.ClientPacketType.SendEnemyDeletion:
+                        HandleSentEnemyDeletion(peer, reader, senderID);
+                        break;
+
+                    case ServerPacket.ClientPacketType.SendNewProjectileInfo:
+                        HandleNewProjectileInfo(peer, reader, senderID);
+                        break;
+
+                    case ServerPacket.ClientPacketType.SendProjectileVariableData:
+                        HandleSentProjectileVariableData(peer, reader, senderID);
+                        break;
+
+                    case ServerPacket.ClientPacketType.SendPlayerUsedItem:
+                        HandlePlayerItemUsage(peer, reader, senderID);
+                        break;
+
+                    case ServerPacket.ClientPacketType.SendDoneLoading:
+                        HandleReceivedDoneLoading(peer, reader, senderID);
+                        break;
+
+                    case ServerPacket.ClientPacketType.SendAllPlayerSpawnData:
+                        HandleReceivedPlayerSpawnData(peer, reader, senderID);
+                        break;
+
+                    case ServerPacket.ClientPacketType.SendNewItemCreation:
+                        HandleReceivedItemCreation(peer, reader, senderID);
+                        break;
+
+                    case ServerPacket.ClientPacketType.SendItemDeletion:
+                        HandleReceivedItemDeletion(peer, reader, senderID);
+                        break;
+
+                    case ServerPacket.ClientPacketType.SendEnemyListForSync:
+                        HandleReceivedEnemyListSync(peer, reader, senderID);
+                        break;
+
+                    case ServerPacket.ClientPacketType.RequestEnemyData:
+                        HandleEnemyDataRequest(peer, reader, senderID);
+                        break;
+
+                    case ServerPacket.ClientPacketType.SendEnemyData:
+                        HandleReceivedEnemyData(peer, reader, senderID);
+                        break;
+
+                    case ServerPacket.ClientPacketType.SendEnemyDamage:
+                        HandleReceivedEnemyDamage(peer, reader, senderID);
+                        break;
+                }
+            }
+            catch (Exception exception)
+            {
+                Logger.CreateFileLogs(exception);
+                Logger.Error("Error at:" + exception.StackTrace + "\nMessage: " + exception.Message + "\nSource: " + exception.Source);
             }
         }
 
-        public void HandleDataMessages(NetIncomingMessage message)
+        public void HandleReceivedPingPacket(NetPeer sender, NetDataReader reader, byte senderID)
         {
-            ServerPacket.ClientPacketType messageDataType = (ServerPacket.ClientPacketType)message.ReadByte();
-            int sender = message.ReadInt32();
-            Logger.DebugInfo(messageDataType.ToString());
+            NetDataWriter pingMessage = new NetDataWriter();
+            pingMessage.Put((byte)ServerPacket.ServerPacketType.GivePing);
+            pingMessage.Put(senderID);
 
-            switch (messageDataType)
-            {
-                case ServerPacket.ClientPacketType.SendPing:
-                    HandleReceivedPingPacket(message, sender);
-                    break;
-
-                case ServerPacket.ClientPacketType.RequestID:       //Gives the peer who requested it an ID
-                    HandleIDRequest(message, sender);
-                    break;
-
-                case ServerPacket.ClientPacketType.SendClientInfo:
-                    HandleNewClientInfo(message, sender);
-                    break;
-
-                case ServerPacket.ClientPacketType.SendClientCharacterType:
-                    HandleClientCharacterType(message, sender);
-                    break;
-
-                case ServerPacket.ClientPacketType.RequestAllClientData:
-                    HandleAllClientsDataRequest(message, sender);
-                    break;
-
-                /*case ServerPacket.ClientPacketType.RequestAllPlayerData:        //Returns the data of all current players in the game.
-                    HandleAllPlayersDataRequest(message, sender);
-                    break;*/
-
-                case ServerPacket.ClientPacketType.RequestPlayerDataDeletion:
-                    HandlePlayerDataDeletionRequest(message, sender);
-                    break;
-
-                case ServerPacket.ClientPacketType.SendMovementInformation:      //Sends the peer's position to all peers that aren't the sender
-                    HandleClientMovementInformation(message, sender);
-                    break;
-
-                case ServerPacket.ClientPacketType.SendPlayerVariableData:
-                    HandleReceivedPlayerVariableData(message, sender);
-                    break;
-
-                /*case ServerPacket.ClientPacketType.SendPlayerInfo:      //Send the peer's player information to all peers that aren't the sender
-                    HandlePlayerInfo(message, sender);
-                    break;*/
-
-                case ServerPacket.ClientPacketType.SendSound:
-                    HandleSentSoundData(message, sender);
-                    break;
-
-                case ServerPacket.ClientPacketType.SendStringMessageToOtherPlayers:
-                    HandleSentMessage(message, sender);
-                    break;
-
-                case ServerPacket.ClientPacketType.SendWorldArray:
-                    HandleWorldData(message, sender);
-                    break;
-
-                case ServerPacket.ClientPacketType.SendNewEnemyInfo:
-                    HandleNewEnemyInfo(message, sender);
-                    break;
-
-                case ServerPacket.ClientPacketType.SendEnemyVariableData:
-                    HandleSentEnemyVariableData(message, sender);
-                    break;
-
-                case ServerPacket.ClientPacketType.SendEnemyDeletion:
-
-                case ServerPacket.ClientPacketType.SendNewProjectileInfo:
-                    HandleNewProjectileInfo(message, sender);
-                    break;
-
-                case ServerPacket.ClientPacketType.SendProjectileVariableData:
-                    HandleSentProjectileVariableData(message, sender);
-                    break;
-
-                case ServerPacket.ClientPacketType.SendPlayerUsedItem:
-                    HandlePlayerItemUsage(message, sender);
-                    break;
-
-                case ServerPacket.ClientPacketType.SendDoneLoading:
-                    HandleReceivedDoneLoading(message, sender);
-                    break;
-
-                case ServerPacket.ClientPacketType.SendAllPlayerSpawnData:
-                    HandleReceivedPlayerSpawnData(message, sender);
-                    break;
-
-                case ServerPacket.ClientPacketType.SendNewItemCreation:
-                    HandleReceivedItemCreation(message, sender);
-                    break;
-
-                case ServerPacket.ClientPacketType.SendItemDeletion:
-                    HandleReceivedItemDeletion(message, sender);
-                    break;
-
-                case ServerPacket.ClientPacketType.SendEnemyListForSync:
-                    HandleReceivedEnemyListSync(message, sender);
-                    break;
-            }
+            SendMessageBackToSender(pingMessage, sender);
         }
 
-        public void HandleReceivedPingPacket(NetIncomingMessage message, int sender)
-        {
-            NetOutgoingMessage pingMessage = mainServer.CreateMessage();
-            pingMessage.Write((byte)ServerPacket.ServerPacketType.GivePing);
-            pingMessage.Write(sender);
-            pingMessage.Write(0);
-
-            SendMessageBackToSender(pingMessage, message.SenderConnection);
-        }
-
-        public void HandleIDRequest(NetIncomingMessage message, int sender)
+        public void HandleIDRequest(NetPeer sender, NetDataReader reader, byte senderID)
         {
             int givenID = clientData.Count + 1;
 
-            NetOutgoingMessage clientIDMessage = mainServer.CreateMessage();
-            clientIDMessage.Write((byte)ServerPacket.ServerPacketType.GiveID);
-            clientIDMessage.Write(sender);
-            clientIDMessage.Write(givenID);
+            NetDataWriter clientIDMessage = new NetDataWriter();
+            clientIDMessage.Put((byte)ServerPacket.ServerPacketType.GiveID);
+            clientIDMessage.Put(senderID);
+            clientIDMessage.Put(givenID);
 
-            SendMessageBackToSender(clientIDMessage, message.SenderConnection);
+            SendMessageBackToSender(clientIDMessage, sender);
             Logger.UserFriendlyInfo("Assigned ID of " + givenID + " to a newly connected client.");
         }
 
-        public void HandleNewClientInfo(NetIncomingMessage message, int sender)
+        public void HandleNewClientInfo(NetPeer sender, NetDataReader reader, byte senderID)
         {
-            int clientID = sender;
-            string clientName = message.ReadString();
+            byte clientID = senderID;
+            string clientName = reader.GetString();
 
             ClientData newClientData = new ClientData();
             newClientData.clientID = clientID;
             newClientData.clientName = clientName;
             clientData.Add(clientID, newClientData);
 
-            if (mainServer.Connections.Count < 2)
+            if (serverManager.ConnectedPeersCount < 2)
                 return;
 
+            NetDataWriter clientInfoMessage = new NetDataWriter();
+            clientInfoMessage.Put((byte)ServerPacket.ServerPacketType.GiveClientInfo);
+            clientInfoMessage.Put(senderID);
+            clientInfoMessage.Put(clientName);
 
-            NetOutgoingMessage clientInfoMessage = mainServer.CreateMessage();
-            clientInfoMessage.Write((byte)ServerPacket.ServerPacketType.GiveClientInfo);
-            clientInfoMessage.Write(sender);
-            clientInfoMessage.Write(clientID);
-            clientInfoMessage.Write(clientName);
-
-            SendMessageToAllOthers(clientInfoMessage, message.SenderConnection);
+            SendMessageToAllOthers(clientInfoMessage, sender);
         }
 
-        public void HandleClientCharacterType(NetIncomingMessage message, int sender)
+        public void HandleClientCharacterType(NetPeer sender, NetDataReader reader, byte senderID)
         {
-            int clientID = sender;
-            int clientCharacterType = message.ReadInt32();
+            int clientID = senderID;
+            int clientCharacterType = reader.GetInt();
 
             ClientData clientDataClone = clientData[clientID];
             clientDataClone.chosenCharacterType = clientCharacterType;
             clientData[clientID] = clientDataClone;
 
-            if (mainServer.Connections.Count < 2)
+            if (serverManager.ConnectedPeersCount < 2)
                 return;
 
 
-            NetOutgoingMessage clientCharacterTypeMessage = mainServer.CreateMessage();
-            clientCharacterTypeMessage.Write((byte)ServerPacket.ServerPacketType.GiveClientCharacterType);
-            clientCharacterTypeMessage.Write(sender);
-            clientCharacterTypeMessage.Write(clientID);
-            clientCharacterTypeMessage.Write(clientCharacterType);
+            NetDataWriter clientCharacterTypeMessage = new NetDataWriter();
+            clientCharacterTypeMessage.Put((byte)ServerPacket.ServerPacketType.GiveClientCharacterType);
+            clientCharacterTypeMessage.Put(senderID);
+            clientCharacterTypeMessage.Put(clientCharacterType);
 
-            SendMessageToAllOthers(clientCharacterTypeMessage, message.SenderConnection);
+            SendMessageToAllOthers(clientCharacterTypeMessage, sender);
         }
 
-        public void HandleAllClientsDataRequest(NetIncomingMessage message, int sender)
+        public void HandleAllClientsDataRequest(NetPeer sender, NetDataReader reader, byte senderID)
         {
-            NetOutgoingMessage clientDataMessage = mainServer.CreateMessage();
-            clientDataMessage.Write((byte)ServerPacket.ServerPacketType.GiveAllClientData);
-            clientDataMessage.Write(sender);
-            clientDataMessage.Write(clientData.Count);
+            NetDataWriter clientDataMessage = new NetDataWriter();
+            clientDataMessage.Put((byte)ServerPacket.ServerPacketType.GiveAllClientData);
+            clientDataMessage.Put(senderID);
+            clientDataMessage.Put(clientData.Count);
 
             ClientData[] clientDataArray = clientData.Values.ToArray();
             for (int i = 0; i < clientDataArray.Length; i++)        //The data has to be read by index cause we don't know how many players there are
             {
-                clientDataMessage.Write((byte)clientDataArray[i].clientID);
-                clientDataMessage.Write(clientDataArray[i].clientName);
-                clientDataMessage.Write((byte)clientDataArray[i].chosenCharacterType);
+                clientDataMessage.Put((byte)clientDataArray[i].clientID);
+                clientDataMessage.Put(clientDataArray[i].clientName);
+                clientDataMessage.Put((byte)clientDataArray[i].chosenCharacterType);
             }
 
-            SendMessageBackToSender(clientDataMessage, message.SenderConnection);
+            SendMessageBackToSender(clientDataMessage, sender);
         }
 
-        /*public void HandleAllPlayersDataRequest(NetIncomingMessage message, int sender)
+        public void HandlePlayerDataDeletionRequest(NetPeer sender, NetDataReader reader, byte senderID)
         {
-            NetOutgoingMessage playerDataMessage = mainServer.CreateMessage();
-            playerDataMessage.Write((byte)ServerPacket.ServerPacketType.GiveAllPlayerData);
-            playerDataMessage.Write(sender);
-            playerDataMessage.Write(playerData.Count);
+            NetDataWriter playerDataDeletionMessage = new NetDataWriter();
+            playerDataDeletionMessage.Put((byte)ServerPacket.ServerPacketType.GivePlayerDataDeletion);
+            playerDataDeletionMessage.Put(senderID);
 
-            PlayerData[] playerDataArray = playerData.Values.ToArray();
-            for (int i = 0; i < playerDataArray.Length; i++)        //The data has to be read by index cause we don't know how many players there are
+            if(!clientData.ContainsKey(senderID))
             {
-                playerDataMessage.Write(playerDataArray[i].playerID);
-                playerDataMessage.Write(playerDataArray[i].name);
-                playerDataMessage.Write(playerDataArray[i].health);
-            }
-
-            SendMessageBackToSender(playerDataMessage, message.SenderConnection);
-        }*/
-
-        public void HandlePlayerDataDeletionRequest(NetIncomingMessage message, int sender)
-        {
-            NetOutgoingMessage playerDataDeletionMessage = mainServer.CreateMessage();
-            playerDataDeletionMessage.Write((byte)ServerPacket.ServerPacketType.GivePlayerDataDeletion);
-            playerDataDeletionMessage.Write(sender);
-
-            playerData.Remove(sender);
-            Dictionary<int, PlayerData> temporaryPlayersDict = playerData;
-            playerData.Clear();
-            for (int i = 0; i < temporaryPlayersDict.Count; i++)
-            {
-                if (i >= sender)
-                {
-                    playerData.Add(i, temporaryPlayersDict[i + 1]);
-                }
-                else
-                {
-                    playerData.Add(i, temporaryPlayersDict[i]);
-                }
-            }
-
-            SendMessageToAllOthers(playerDataDeletionMessage, message.SenderConnection);
-            Logger.UserFriendlyInfo("A client has been removed from the game.");
-        }
-
-        public void HandleClientMovementInformation(NetIncomingMessage message, int sender)
-        {
-            float x = message.ReadFloat();
-            float y = message.ReadFloat();
-            float velX = message.ReadFloat();
-            float velY = message.ReadFloat();
-            int direction = message.ReadInt32();
-
-            NetOutgoingMessage playerMovementMessage = mainServer.CreateMessage();
-            playerMovementMessage.Write((byte)ServerPacket.ServerPacketType.GiveClientMovementInformation);
-            playerMovementMessage.Write(sender);
-            playerMovementMessage.Write(x);
-            playerMovementMessage.Write(y);
-            playerMovementMessage.Write(velX);
-            playerMovementMessage.Write(velY);
-            playerMovementMessage.Write(direction);
-
-            SendMessageToAllOthers(playerMovementMessage, message.SenderConnection, NetDeliveryMethod.Unreliable);
-        }
-
-        public void HandleReceivedPlayerVariableData(NetIncomingMessage message, int sender)
-        {
-            byte variableIndex = message.ReadByte();
-            int value1 = message.ReadInt32();
-            int value2 = message.ReadInt32();
-            int value3 = message.ReadInt32();
-
-            NetOutgoingMessage enemyDataMessage = mainServer.CreateMessage();
-            enemyDataMessage.Write((byte)ServerPacket.ServerPacketType.SendPlayerVariableData);
-            enemyDataMessage.Write(sender);
-            enemyDataMessage.Write(variableIndex);
-            enemyDataMessage.Write(value1);
-            enemyDataMessage.Write(value2);
-            enemyDataMessage.Write(value3);
-
-            SendMessageToAllOthers(enemyDataMessage, message.SenderConnection);
-        }
-
-        /*public void HandlePlayerInfo(NetIncomingMessage message, int sender)
-        {
-            PlayerData newPlayerData = new PlayerData();
-            string playerName = message.ReadString();
-            int playerHealth = message.ReadInt32();
-            int playerID = message.ReadInt32();
-
-            playerData.Add(playerID, newPlayerData);
-            playerData[playerID].name = playerName;
-            playerData[playerID].health = playerHealth;
-            playerData[playerID].playerID = playerID;
-
-
-            if (mainServer.Connections.Count < 2)
                 return;
+            }
 
+            string playerName = clientData[senderID].clientName;
 
-            NetOutgoingMessage playerInfoMessage = mainServer.CreateMessage();
-            playerInfoMessage.Write((byte)ServerPacket.ServerPacketType.GivePlayerInfo);
-            playerInfoMessage.Write(sender);
-            playerInfoMessage.Write(playerName);
-            playerInfoMessage.Write(playerHealth);
-            playerInfoMessage.Write(playerID);
+            Dictionary<int, ClientData> newClientData = new Dictionary<int, ClientData>();
+            int[] clientDataKeys = clientData.Keys.ToArray();
 
-            SendMessageToAllOthers(playerInfoMessage, message.SenderConnection);
-        }*/
+            foreach(ClientData client in clientData.Values)
+            {
+                if (client.clientID < senderID)
+                {
+                    if (clientData.ContainsKey(client.clientID) && clientDataKeys.Length > client.clientID)
+                    {
+                        newClientData.Add(client.clientID, client);
+                    }
+                }
+                else if (client.clientID > senderID)
+                {
+                    ClientData transferredClientData = client;
+                    if(client.clientID > 1)
+                    {
+                        transferredClientData.clientID = (byte)(client.clientID - 1);
+                        newClientData.Add(client.clientID - 1, transferredClientData);
+                    }
+                }
+            }
 
-        public void HandleSentSoundData(NetIncomingMessage message, int sender)
-        {
-            int soundType = message.ReadInt32();
-            float soundPosX = message.ReadFloat();
-            float soundPosY = message.ReadFloat();
-            float soundTravelDistance = message.ReadFloat();
-            float soundPitch = message.ReadFloat();
-            float soundVolume = message.ReadFloat();
+            clientData = newClientData;
 
-            NetOutgoingMessage soundInfoMessage = mainServer.CreateMessage();
-            soundInfoMessage.Write((byte)ServerPacket.ServerPacketType.PlaySound);
-            soundInfoMessage.Write(sender);
-            soundInfoMessage.Write(soundType);
-            soundInfoMessage.Write(soundPosX);
-            soundInfoMessage.Write(soundPosY);
-            soundInfoMessage.Write(soundPitch);
-            soundInfoMessage.Write(soundVolume);
-            soundInfoMessage.Write(soundTravelDistance);
-
-
-            SendMessageToAllOthers(soundInfoMessage, message.SenderConnection);
+            SendMessageToAllOthers(playerDataDeletionMessage, sender);
+            Logger.UserFriendlyInfo(playerName + " has been removed from the game." + clientData.Count);
+            serverManager.DisconnectPeer(sender);
         }
 
-        public void HandleSentMessage(NetIncomingMessage message, int sender)
+        public void HandleClientMovementInformation(NetPeer sender, NetDataReader reader, byte senderID)
         {
-            string playerMessage = message.ReadString();
+            float x = reader.GetFloat();
+            float y = reader.GetFloat();
+            float velX = reader.GetFloat();
+            float velY = reader.GetFloat();
+            int direction = reader.GetInt();
 
-            NetOutgoingMessage stringMessage = mainServer.CreateMessage();
-            stringMessage.Write((byte)ServerPacket.ServerPacketType.GiveStringMessageToOtherPlayers);
-            stringMessage.Write(sender);
-            stringMessage.Write(playerMessage);
+            NetDataWriter playerMovementMessage = new NetDataWriter();
+            playerMovementMessage.Put((byte)ServerPacket.ServerPacketType.GiveClientMovementInformation);
+            playerMovementMessage.Put(senderID);
+            playerMovementMessage.Put(x);
+            playerMovementMessage.Put(y);
+            playerMovementMessage.Put(velX);
+            playerMovementMessage.Put(velY);
+            playerMovementMessage.Put(direction);
 
-            SendMessageToAllOthers(stringMessage, message.SenderConnection);
-            Logger.UserFriendlyInfo("Player " + sender + ": " + playerMessage);
+            SendMessageToAllOthers(playerMovementMessage, sender, DeliveryMethod.Unreliable);
         }
 
-        public void HandleWorldData(NetIncomingMessage message, int sender)
+        public void HandleReceivedPlayerVariableData(NetPeer sender, NetDataReader reader, byte senderID)
         {
-            NetOutgoingMessage worldDataMessage = mainServer.CreateMessage();
-            /*worldDataMessage.Data = message.Data;
-            worldDataMessage.Data[0] = (byte)ServerPacket.ServerPacketType.SendWorldArrayToAll;*/       //Doesn't work for some reason
+            byte variableIndex = reader.GetByte();
+            int value1 = reader.GetInt();
+            int value2 = reader.GetInt();
+            int value3 = reader.GetInt();
 
-            /*worldDataMessage.Data = new byte[message.Data.Length];
-            message.Data.CopyTo(worldDataMessage.Data, 0);
-            worldDataMessage.Data[0] = (byte)ServerPacket.ServerPacketType.SendWorldArrayToAll;
-            worldDataMessage.Data[1] = Convert.ToByte(sender); */
+            NetDataWriter enemyDataMessage = new NetDataWriter();
+            enemyDataMessage.Put((byte)ServerPacket.ServerPacketType.SendPlayerVariableData);
+            enemyDataMessage.Put(senderID);
+            enemyDataMessage.Put(variableIndex);
+            enemyDataMessage.Put(value1);
+            enemyDataMessage.Put(value2);
+            enemyDataMessage.Put(value3);
 
-            worldDataMessage.Write((byte)ServerPacket.ServerPacketType.SendWorldArrayToAll);
-            worldDataMessage.Write(sender);
+            SendMessageToAllOthers(enemyDataMessage, sender);
+        }
 
-            int width = message.ReadInt32();
-            int height = message.ReadInt32();
-            worldDataMessage.Write(width);
-            worldDataMessage.Write(height);
+        public void HandleSentSoundData(NetPeer sender, NetDataReader reader, byte senderID)
+        {
+            int soundType = reader.GetInt();
+            float soundPosX = reader.GetFloat();
+            float soundPosY = reader.GetFloat();
+            float soundTravelDistance = reader.GetFloat();
+            float soundPitch = reader.GetFloat();
+            float soundVolume = reader.GetFloat();
 
-             for (int x = 0; x < width; x++)
-             {
-                 for (int y = 0; y < height; y++)
-                 {
-                     byte tileType = message.ReadByte();
-                     byte textureType = message.ReadByte();
+            NetDataWriter soundInfoMessage = new NetDataWriter();
+            soundInfoMessage.Put((byte)ServerPacket.ServerPacketType.PlaySound);
+            soundInfoMessage.Put(senderID);
+            soundInfoMessage.Put(soundType);
+            soundInfoMessage.Put(soundPosX);
+            soundInfoMessage.Put(soundPosY);
+            soundInfoMessage.Put(soundTravelDistance);
+            soundInfoMessage.Put(soundPitch);
+            soundInfoMessage.Put(soundVolume);
 
-                     worldDataMessage.Write(tileType);
-                     worldDataMessage.Write(textureType);
-                 }
-             }
+
+            SendMessageToAllOthers(soundInfoMessage, sender);
+        }
+
+        public void HandleSentMessage(NetPeer sender, NetDataReader reader, byte senderID)
+        {
+            string playerMessage = reader.GetString();
+
+            NetDataWriter stringMessage = new NetDataWriter();
+            stringMessage.Put((byte)ServerPacket.ServerPacketType.GiveStringMessageToOtherPlayers);
+            stringMessage.Put(senderID);
+            stringMessage.Put(playerMessage);
+
+            SendMessageToAllOthers(stringMessage, sender);
+            Logger.UserFriendlyInfo("Player " + clientData[senderID].clientName + ": " + playerMessage);
+        }
+
+        public void HandleWorldData(NetPeer sender, NetDataReader reader, byte senderID)
+        {
+            NetDataWriter worldDataMessage = new NetDataWriter();
+            worldDataMessage.Put((byte)ServerPacket.ServerPacketType.SendWorldArrayToAll);
+            worldDataMessage.Put(senderID);
+
+            int width = reader.GetInt();
+            int height = reader.GetInt();
+            worldDataMessage.Put(width);
+            worldDataMessage.Put(height);
+
             for (int x = 0; x < width; x++)
             {
                 for (int y = 0; y < height; y++)
                 {
-                    byte objType = message.ReadByte();
-                    worldDataMessage.Write(objType);
+                    byte tileType = reader.GetByte();
+                    byte textureType = reader.GetByte();
+
+                    worldDataMessage.Put(tileType);
+                    worldDataMessage.Put(textureType);
+                }
+            }
+            for (int x = 0; x < width; x++)
+            {
+                for (int y = 0; y < height; y++)
+                {
+                    byte objType = reader.GetByte();
+                    worldDataMessage.Put(objType);
                     if (objType == 0)
                         continue;
 
-                    int posX = message.ReadInt32();
-                    int posY = message.ReadInt32();
-                    byte info1 = message.ReadByte();
-                    byte info2 = message.ReadByte();
+                    int index = reader.GetInt();
+                    int posX = reader.GetInt();
+                    int posY = reader.GetInt();
+                    byte info1 = reader.GetByte();
+                    byte info2 = reader.GetByte();
 
-                    worldDataMessage.Write(posX);
-                    worldDataMessage.Write(posY);
-                    worldDataMessage.Write(info1);
-                    worldDataMessage.Write(info2);
+                    worldDataMessage.Put(index);
+                    worldDataMessage.Put(posX);
+                    worldDataMessage.Put(posY);
+                    worldDataMessage.Put(info1);
+                    worldDataMessage.Put(info2);
                 }
             }
 
-            SendMessageToAllOthers(worldDataMessage, message.SenderConnection);
+            gameCurrentlyActive = true;
+            SendMessageToAllOthers(worldDataMessage, sender);
             Logger.UserFriendlyInfo("Created World of [" + width + ", " + height + "].");
         }
 
-        public void HandleNewEnemyInfo(NetIncomingMessage message, int sender)
+        public void HandleUpdatedMapObject(NetPeer sender, NetDataReader reader, byte senderID)
         {
-            byte enemyType = message.ReadByte();
-            float posX = message.ReadFloat();
-            float posY = message.ReadFloat();
-            byte enemyIndex = message.ReadByte();
+            int objectIndex = reader.GetInt();
+            int posX = reader.GetInt();
+            int posY = reader.GetInt();
+            byte info1 = reader.GetByte();
+            byte info2 = reader.GetByte();
 
-            /*int objectInfoLength = 0;
-            byte[] objectInfo = null;
-            int objectExtraInfoLength = 0;
-            byte[] objectExtraInfo = null;
-            if (bodyType == 1)
-            {
-                objectInfoLength = message.ReadInt32();
-                objectInfo = message.ReadBytes(objectInfoLength);
-                objectExtraInfoLength = message.ReadInt32();
-                objectExtraInfo = message.ReadBytes(objectExtraInfoLength);
-            }*/
-
-            NetOutgoingMessage newEnemyDataMessage = mainServer.CreateMessage();
-            newEnemyDataMessage.Write((byte)ServerPacket.ServerPacketType.SendNewEnemyInfo);
-            newEnemyDataMessage.Write(sender);
-            newEnemyDataMessage.Write(enemyType);
-            newEnemyDataMessage.Write(posX);
-            newEnemyDataMessage.Write(posY);
-            newEnemyDataMessage.Write(enemyIndex);
-            /*if (bodyType == 1)
-            {
-                message.Write(objectInfoLength);
-                message.Write(objectInfo);
-                message.Write(objectExtraInfoLength);
-                message.Write(objectExtraInfo);
-            }*/
-
-            SendMessageToAllOthers(newEnemyDataMessage, message.SenderConnection);
+            NetDataWriter mapObjectMessage = new NetDataWriter();
+            mapObjectMessage.Put((byte)ServerPacket.ServerPacketType.SendUpdatedMapObject);
+            mapObjectMessage.Put(senderID);
+            mapObjectMessage.Put(objectIndex);
+            mapObjectMessage.Put(posX);
+            mapObjectMessage.Put(posY);
+            mapObjectMessage.Put(info1);
+            mapObjectMessage.Put(info2);
+            SendMessageToAllOthers(mapObjectMessage, sender);
         }
 
-        public void HandleSentEnemyVariableData(NetIncomingMessage message, int sender)
+        public void HandleDestroyedMapObject(NetPeer sender, NetDataReader reader, byte senderID)
         {
-            int objectIndex = message.ReadInt32();
-            byte variableIndex = message.ReadByte();
-            int value1 = message.ReadInt32();
-            int value2 = message.ReadInt32();
-            int value3 = message.ReadInt32();
+            int objectIndex = reader.GetInt();
+
+            NetDataWriter mapObjectDestructionMessage = new NetDataWriter();
+            mapObjectDestructionMessage.Put((byte)ServerPacket.ServerPacketType.SendMapObjectDestruction);
+            mapObjectDestructionMessage.Put(senderID);
+            mapObjectDestructionMessage.Put(objectIndex);
+            SendMessageToAllOthers(mapObjectDestructionMessage, sender);
+        }
+
+        public void HandleNewEnemyInfo(NetPeer sender, NetDataReader reader, byte senderID)
+        {
+            byte enemyType = reader.GetByte();
+            int id = reader.GetInt();
+            float posX = reader.GetFloat();
+            float posY = reader.GetFloat();
+
+            NetDataWriter newEnemyDataMessage = new NetDataWriter();
+            newEnemyDataMessage.Put((byte)ServerPacket.ServerPacketType.SendNewEnemyInfo);
+            newEnemyDataMessage.Put(senderID);
+            newEnemyDataMessage.Put(enemyType);
+            newEnemyDataMessage.Put(id);
+            newEnemyDataMessage.Put(posX);
+            newEnemyDataMessage.Put(posY);
+
+            SendMessageToAllOthers(newEnemyDataMessage, sender);
+        }
+
+        public void HandleSentEnemyVariableData(NetPeer sender, NetDataReader reader, byte senderID)
+        {
+            int id = reader.GetInt();
+            byte enemyType = reader.GetByte();
+            byte variableIndex = reader.GetByte();
+            int value1 = reader.GetInt();
+            int value2 = reader.GetInt();
+            int value3 = reader.GetInt();
             if (variableIndex == 0 && value1 > 4)
-                value1 = 0;
+                value1 = 1;
 
-            NetOutgoingMessage enemyDataMessage = mainServer.CreateMessage();
-            enemyDataMessage.Write((byte)ServerPacket.ServerPacketType.SendEnemyVariableData);
-            enemyDataMessage.Write(sender);
-            enemyDataMessage.Write(objectIndex);
-            enemyDataMessage.Write(variableIndex);
-            enemyDataMessage.Write(value1);
-            enemyDataMessage.Write(value2);
-            enemyDataMessage.Write(value3);
+            NetDataWriter enemyDataMessage = new NetDataWriter();
+            enemyDataMessage.Put((byte)ServerPacket.ServerPacketType.SendEnemyVariableData);
+            enemyDataMessage.Put(senderID);
+            enemyDataMessage.Put(id);
+            enemyDataMessage.Put(enemyType);
+            enemyDataMessage.Put(variableIndex);
+            enemyDataMessage.Put(value1);
+            enemyDataMessage.Put(value2);
+            enemyDataMessage.Put(value3);
 
-            SendMessageToAllOthers(enemyDataMessage, message.SenderConnection);
+            SendMessageToAllOthers(enemyDataMessage, sender);
         }
 
-        public void HandleSentEnemyDeletion(NetIncomingMessage message, int sender)
+        public void HandleSentEnemyAilmentUpdate(NetPeer sender, NetDataReader reader, byte senderID)
         {
-            int enemyIndex = message.ReadInt32();
+            int id = reader.GetInt();
+            byte ailmentIndex = reader.GetByte();
+            byte ailmentType = reader.GetByte();
+            byte ailmentStage = reader.GetByte();
 
-            NetOutgoingMessage enemyDeletionMessage = mainServer.CreateMessage();
-            enemyDeletionMessage.Write((byte)ServerPacket.ServerPacketType.SendEnemyDeath);
-            enemyDeletionMessage.Write(sender);
-            enemyDeletionMessage.Write(enemyIndex);
+            NetDataWriter enemyAilmentMessage = new NetDataWriter();
+            enemyAilmentMessage.Put((byte)ServerPacket.ServerPacketType.SendEnemyAilment);
+            enemyAilmentMessage.Put(senderID);
+            enemyAilmentMessage.Put(id);
+            enemyAilmentMessage.Put(ailmentIndex);
+            enemyAilmentMessage.Put(ailmentType);
+            enemyAilmentMessage.Put(ailmentStage);
 
-            SendMessageToAllOthers(enemyDeletionMessage, message.SenderConnection);
+            SendMessageToAllOthers(enemyAilmentMessage, sender);
         }
 
-        public void HandleNewProjectileInfo(NetIncomingMessage message, int sender)
+        public void HandleSentEnemyDeletion(NetPeer sender, NetDataReader reader, byte senderID)
         {
-            byte type = message.ReadByte();
-            int posX = message.ReadInt32();
-            int posY = message.ReadInt32();
-            float velX = message.ReadInt32();
-            float velY = message.ReadInt32();
-            byte owner = message.ReadByte();
-            int index = message.ReadInt32();
-            int info1 = message.ReadInt32();
-            int info2 = message.ReadInt32();
-            int info3 = message.ReadInt32();
+            int enemyIndex = reader.GetInt();
+            int posX = reader.GetInt();
+            int posY = reader.GetInt();
 
-            NetOutgoingMessage newProjectileDataMessage = mainServer.CreateMessage();
-            newProjectileDataMessage.Write((byte)ServerPacket.ServerPacketType.SendNewProjectileInfo);
-            newProjectileDataMessage.Write(sender);
-            newProjectileDataMessage.Write(type);
-            newProjectileDataMessage.Write(posX);
-            newProjectileDataMessage.Write(posY);
-            newProjectileDataMessage.Write(velX);
-            newProjectileDataMessage.Write(velY);
+            NetDataWriter enemyDeletionMessage = new NetDataWriter();
+            enemyDeletionMessage.Put((byte)ServerPacket.ServerPacketType.SendEnemyDeath);
+            enemyDeletionMessage.Put(senderID);
+            enemyDeletionMessage.Put(enemyIndex);
+            enemyDeletionMessage.Put(posX);
+            enemyDeletionMessage.Put(posY);
 
-            newProjectileDataMessage.Write(owner);
-            newProjectileDataMessage.Write(index);
-            newProjectileDataMessage.Write(info1);
-            newProjectileDataMessage.Write(info2);
-            newProjectileDataMessage.Write(info3);
-
-            SendMessageToAllOthers(newProjectileDataMessage, message.SenderConnection);
+            SendMessageToAllOthers(enemyDeletionMessage, sender);
         }
 
-        public void HandleSentProjectileVariableData(NetIncomingMessage message, int sender)
+        public void HandleNewProjectileInfo(NetPeer sender, NetDataReader reader, byte senderID)
         {
-            int objectIndex = message.ReadInt32();
-            byte variableIndex = message.ReadByte();
-            int value1 = message.ReadInt32();
-            int value2 = message.ReadInt32();
-            int value3 = message.ReadInt32();
+            byte type = reader.GetByte();
+            int posX = reader.GetInt();
+            int posY = reader.GetInt();
+            float velX = reader.GetFloat();
+            float velY = reader.GetFloat();
+            byte owner = reader.GetByte();
+            int index = reader.GetInt();
+            int info1 = reader.GetInt();
+            int info2 = reader.GetInt();
+            int info3 = reader.GetInt();
 
-            NetOutgoingMessage projectileDataMessage = mainServer.CreateMessage();
-            projectileDataMessage.Write((byte)ServerPacket.ServerPacketType.SendProjectileVariableData);
-            projectileDataMessage.Write(sender);
-            projectileDataMessage.Write(objectIndex);
-            projectileDataMessage.Write(variableIndex);
-            projectileDataMessage.Write(value1);
-            projectileDataMessage.Write(value2);
-            projectileDataMessage.Write(value3);
+            NetDataWriter newProjectileDataMessage = new NetDataWriter();
+            newProjectileDataMessage.Put((byte)ServerPacket.ServerPacketType.SendNewProjectileInfo);
+            newProjectileDataMessage.Put(senderID);
+            newProjectileDataMessage.Put(type);
+            newProjectileDataMessage.Put(posX);
+            newProjectileDataMessage.Put(posY);
+            newProjectileDataMessage.Put(velX);
+            newProjectileDataMessage.Put(velY);
 
-            SendMessageToAllOthers(projectileDataMessage, message.SenderConnection);
+            newProjectileDataMessage.Put(owner);
+            newProjectileDataMessage.Put(index);
+            newProjectileDataMessage.Put(info1);
+            newProjectileDataMessage.Put(info2);
+            newProjectileDataMessage.Put(info3);
+
+            SendMessageToAllOthers(newProjectileDataMessage, sender);
         }
 
-        public void HandlePlayerItemUsage(NetIncomingMessage message, int sender)
+        public void HandleSentProjectileVariableData(NetPeer sender, NetDataReader reader, byte senderID)
         {
-            byte itemType = message.ReadByte();
-            int emulatedMousePosX = message.ReadInt32();
-            int emulatedMousePosY = message.ReadInt32();
-            bool secondaryUse = message.ReadBoolean();
+            int objectIndex = reader.GetInt();
+            byte variableIndex = reader.GetByte();
+            int value1 = reader.GetInt();
+            int value2 = reader.GetInt();
+            int value3 = reader.GetInt();
 
-            NetOutgoingMessage itemUsageMessage = mainServer.CreateMessage();
-            itemUsageMessage.Write((byte)ServerPacket.ServerPacketType.SendPlayerUsedItem);
-            itemUsageMessage.Write(sender);
-            itemUsageMessage.Write(itemType);
-            itemUsageMessage.Write(emulatedMousePosX);
-            itemUsageMessage.Write(emulatedMousePosY);
-            itemUsageMessage.Write(secondaryUse);
+            NetDataWriter projectileDataMessage = new NetDataWriter();
+            projectileDataMessage.Put((byte)ServerPacket.ServerPacketType.SendProjectileVariableData);
+            projectileDataMessage.Put(senderID);
+            projectileDataMessage.Put(objectIndex);
+            projectileDataMessage.Put(variableIndex);
+            projectileDataMessage.Put(value1);
+            projectileDataMessage.Put(value2);
+            projectileDataMessage.Put(value3);
 
-            SendMessageToAllOthers(itemUsageMessage, message.SenderConnection);
+            SendMessageToAllOthers(projectileDataMessage, sender);
         }
 
-        public void HandleReceivedDoneLoading(NetIncomingMessage message, int sender)
+        public void HandlePlayerItemUsage(NetPeer sender, NetDataReader reader, byte senderID)
         {
-            NetOutgoingMessage doneLoadingMessage = mainServer.CreateMessage();
-            doneLoadingMessage.Write((byte)ServerPacket.ServerPacketType.SendOtherPlayerDoneLoading);
-            doneLoadingMessage.Write(sender);
+            byte itemType = reader.GetByte();
+            int emulatedMousePosX = reader.GetInt();
+            int emulatedMousePosY = reader.GetInt();
+            bool secondaryUse = reader.GetBool();
 
-            SendMessageToAllOthers(doneLoadingMessage, message.SenderConnection);
+            NetDataWriter itemUsageMessage = new NetDataWriter();
+            itemUsageMessage.Put((byte)ServerPacket.ServerPacketType.SendPlayerUsedItem);
+            itemUsageMessage.Put(senderID);
+            itemUsageMessage.Put(itemType);
+            itemUsageMessage.Put(emulatedMousePosX);
+            itemUsageMessage.Put(emulatedMousePosY);
+            itemUsageMessage.Put(secondaryUse);
+
+            SendMessageToAllOthers(itemUsageMessage, sender);
         }
 
-        public void HandleReceivedPlayerSpawnData(NetIncomingMessage message, int sender)
+        public void HandleReceivedDoneLoading(NetPeer sender, NetDataReader reader, byte senderID)
         {
-            NetOutgoingMessage spawnDataMessage = mainServer.CreateMessage();
-            spawnDataMessage.Write((byte)ServerPacket.ServerPacketType.SendAllPlayerSpawnDataToOthers);
-            spawnDataMessage.Write(sender);
+            NetDataWriter doneLoadingMessage = new NetDataWriter();
+            doneLoadingMessage.Put((byte)ServerPacket.ServerPacketType.SendOtherPlayerDoneLoading);
+            doneLoadingMessage.Put(senderID);
 
-            int amountOfPlayers = message.ReadInt32();
-            spawnDataMessage.Write(amountOfPlayers);
+            SendMessageToAllOthers(doneLoadingMessage, sender);
+        }
+
+        public void HandleReceivedPlayerSpawnData(NetPeer sender, NetDataReader reader, byte senderID)
+        {
+            NetDataWriter spawnDataMessage = new NetDataWriter();
+            spawnDataMessage.Put((byte)ServerPacket.ServerPacketType.SendAllPlayerSpawnDataToOthers);
+            spawnDataMessage.Put(senderID);
+
+            int amountOfPlayers = reader.GetInt();
+            spawnDataMessage.Put(amountOfPlayers);
 
             for (int i = 0; i < amountOfPlayers; i++)
             {
-                float playerPosX = message.ReadFloat();
-                float playerPosY = message.ReadFloat();
+                float playerPosX = reader.GetFloat();
+                float playerPosY = reader.GetFloat();
 
-                spawnDataMessage.Write(playerPosX);
-                spawnDataMessage.Write(playerPosY);
+                spawnDataMessage.Put(playerPosX);
+                spawnDataMessage.Put(playerPosY);
             }
 
-            SendMessageToAllOthers(spawnDataMessage, message.SenderConnection);
+            SendMessageToAllOthers(spawnDataMessage, sender);
         }
 
-        public void HandleReceivedItemCreation(NetIncomingMessage message, int sender)
+        public void HandleReceivedItemCreation(NetPeer sender, NetDataReader reader, byte senderID)
         {
-            byte itemType = message.ReadByte();
-            int xPos = message.ReadInt32();
-            int yPos = message.ReadInt32();
+            byte itemType = reader.GetByte();
+            int id = reader.GetInt();
+            int xPos = reader.GetInt();
+            int yPos = reader.GetInt();
+            float xVel = reader.GetFloat();
+            float yVel = reader.GetFloat();
 
-            NetOutgoingMessage itemCreationMessage = mainServer.CreateMessage();
-            itemCreationMessage.Write((byte)ServerPacket.ServerPacketType.SendNewItemCreation);
-            itemCreationMessage.Write(sender);
-            itemCreationMessage.Write(itemType);
-            itemCreationMessage.Write(xPos);
-            itemCreationMessage.Write(yPos);
+            NetDataWriter itemCreationMessage = new NetDataWriter();
+            itemCreationMessage.Put((byte)ServerPacket.ServerPacketType.SendNewItemCreation);
+            itemCreationMessage.Put(senderID);
+            itemCreationMessage.Put(itemType);
+            itemCreationMessage.Put(id);
+            itemCreationMessage.Put(xPos);
+            itemCreationMessage.Put(yPos);
+            itemCreationMessage.Put(xVel);
+            itemCreationMessage.Put(yVel);
 
-            SendMessageToAllOthers(itemCreationMessage, message.SenderConnection);
+            SendMessageToAllOthers(itemCreationMessage, sender);
         }
 
-        public void HandleReceivedItemDeletion(NetIncomingMessage message, int sender)
+        public void HandleReceivedItemDeletion(NetPeer sender, NetDataReader reader, byte senderID)
         {
-            byte index = message.ReadByte();
+            int id = reader.GetInt();
 
-            NetOutgoingMessage itemDeletionMessage = mainServer.CreateMessage();
-            itemDeletionMessage.Write((byte)ServerPacket.ServerPacketType.SendItemDeletion);
-            itemDeletionMessage.Write(sender);
-            itemDeletionMessage.Write(index);
+            NetDataWriter itemDeletionMessage = new NetDataWriter();
+            itemDeletionMessage.Put((byte)ServerPacket.ServerPacketType.SendItemDeletion);
+            itemDeletionMessage.Put(senderID);
+            itemDeletionMessage.Put(id);
 
-            SendMessageToAllOthers(itemDeletionMessage, message.SenderConnection);
+            SendMessageToAllOthers(itemDeletionMessage, sender);
         }
 
-        public void HandleReceivedEnemyListSync(NetIncomingMessage message, int sender)
+        public void HandleReceivedEnemyListSync(NetPeer sender, NetDataReader reader, byte senderID)
         {
-            NetOutgoingMessage enemySyncMessage = mainServer.CreateMessage();
-            enemySyncMessage.Write((byte)ServerPacket.ServerPacketType.ReceiveEnemyListSync);
-            enemySyncMessage.Write(sender);
+            NetDataWriter enemySyncMessage = new NetDataWriter();
+            enemySyncMessage.Put((byte)ServerPacket.ServerPacketType.ReceiveEnemyListSync);
+            enemySyncMessage.Put(senderID);
 
-            byte amountOfEnemies = message.ReadByte();
-            message.Write(amountOfEnemies);
+            byte amountOfEnemies = reader.GetByte();
+            enemySyncMessage.Put(amountOfEnemies);
 
             dungeonEnemies = new int[amountOfEnemies];
-            for (int i = 0; i < amountOfEnemies; i++)
+
+            /*for (int i = 0; i < amountOfEnemies; i++)
             {
-                byte enemyType = message.ReadByte();
-                int health = message.ReadInt32();
-                int posX = message.ReadInt32();
-                int posY = message.ReadInt32();
+                byte enemyType = reader.GetByte();
+                int id = reader.GetInt();
+                int health = reader.GetInt();
+                int posX = reader.GetInt();
+                int posY = reader.GetInt();
                 dungeonEnemies[i] = enemyType;
 
-                message.Write(enemyType);
-                message.Write(health);
-                message.Write(posX);
-                message.Write(posY);
-            }
+                enemySyncMessage.Put(enemyType);
+                enemySyncMessage.Put(id);
+                enemySyncMessage.Put(health);
+                enemySyncMessage.Put(posX);
+                enemySyncMessage.Put(posY);
+            }*/
 
-            SendMessageToAllOthers(enemySyncMessage, message.SenderConnection);
-        }
-
-        public static void SendMessageToAllOthers(NetOutgoingMessage message, NetConnection senderConnection, NetDeliveryMethod deliveryMethod = NetDeliveryMethod.ReliableOrdered)       //Data sending
-        {
-            List<NetConnection> otherConnectionsList = mainServer.Connections;
-            otherConnectionsList.Remove(senderConnection);
-
-            if (otherConnectionsList.Count >= 1)
-                mainServer.SendMessage(message, otherConnectionsList, deliveryMethod, 0);
-        }
-
-        public static void SendMessageBackToSender(NetOutgoingMessage message, NetConnection senderConnection, NetDeliveryMethod deliveryMethod = NetDeliveryMethod.ReliableOrdered)      //Data retrieval
-        {
-            mainServer.SendMessage(message, senderConnection, deliveryMethod);
-        }
-
-        public static void SendMessageToAllOthersOnInterval(NetOutgoingMessage message, NetConnection senderConnection, int interval, NetDeliveryMethod deliveryMethod = NetDeliveryMethod.ReliableOrdered)       //Data sending
-        {
-            List<NetConnection> otherConnectionsList = mainServer.Connections;
-            otherConnectionsList.Remove(senderConnection);
-
-            int[] clientDataKeys = clientData.Keys.ToArray();
-            if (otherConnectionsList.Count >= 1)
+            for (var i = 0; i < amountOfEnemies; i++)
             {
-                int timer = 0;
-                int senderIndex = 0;
-                while (senderIndex != otherConnectionsList.Count)
-                {
-                    timer++;
-                    if (timer >= interval)
-                    {
-                        timer = 0;
-                        mainServer.SendMessage(message, otherConnectionsList[senderIndex], deliveryMethod, 0);
-                        Logger.Info("Shot packet to " + clientData[clientDataKeys[senderIndex]].clientName);
-                        senderIndex++;
-                    }
-                }
+                int id = reader.GetInt();
+                enemySyncMessage.Put(id);
             }
+
+            SendMessageToAllOthers(enemySyncMessage, sender);
+        }
+
+        //Only requests the new data... If we have a network bottle neck we could look here
+        public void HandleEnemyDataRequest(NetPeer sender, NetDataReader reader, byte senderID)
+        {
+            int id = reader.GetInt();
+
+            NetDataWriter enemydatamessage = new NetDataWriter();
+            enemydatamessage.Put((byte)ServerPacket.ServerPacketType.SendRequestedEnemyData);
+            enemydatamessage.Put(senderID);
+            enemydatamessage.Put(id);
+
+            SendMessageToAllOthers(enemydatamessage, sender);
+        }
+
+        //Only sends the new data... If we have a network bottle neck we could look here
+        public void HandleReceivedEnemyData(NetPeer sender, NetDataReader reader, byte senderID)
+        {
+            byte receiverid = reader.GetByte();
+            byte enemyType = reader.GetByte();
+            int id = reader.GetInt();
+            int health = reader.GetInt();
+            float posX = reader.GetFloat();
+            float posY = reader.GetFloat();
+
+            NetDataWriter enemyDataMessage = new NetDataWriter();
+            enemyDataMessage.Put((byte)ServerPacket.ServerPacketType.SendEnemyData);
+            enemyDataMessage.Put(senderID);
+            enemyDataMessage.Put(receiverid);
+            enemyDataMessage.Put(enemyType);
+            enemyDataMessage.Put(id);
+            enemyDataMessage.Put(health);
+            enemyDataMessage.Put(posX);
+            enemyDataMessage.Put(posY);
+
+            SendMessageToAllOthers(enemyDataMessage, sender);
+        }
+
+        public void HandleReceivedEnemyDamage(NetPeer sender, NetDataReader reader, byte senderID)
+        {
+            int id = reader.GetInt();
+            int damage = reader.GetInt();
+            int posX = reader.GetInt();
+            int posY = reader.GetInt();
+            float knockback = reader.GetFloat();
+            byte immunitytimer = reader.GetByte();
+
+            NetDataWriter enemyDamageMessage = new NetDataWriter();
+            enemyDamageMessage.Put((byte)ServerPacket.ServerPacketType.SendEnemyDamage);
+            enemyDamageMessage.Put(senderID);
+            enemyDamageMessage.Put(id);
+            enemyDamageMessage.Put(damage);
+            enemyDamageMessage.Put(posX);
+            enemyDamageMessage.Put(posY);
+            enemyDamageMessage.Put(knockback);
+            enemyDamageMessage.Put(immunitytimer);
+
+            SendMessageToAllOthers(enemyDamageMessage, sender);
+        }
+
+        public static void SendMessageToAllOthers(NetDataWriter writer, NetPeer senderConnection, DeliveryMethod deliveryMethod = DeliveryMethod.ReliableOrdered)       //Data sending
+        {
+            Logger.DebugInfo("Sent a " + (ServerPacket.ServerPacketType)writer.Data[0] + " packet");
+            serverManager.SendToAll(writer, deliveryMethod, senderConnection);
+        }
+
+        public static void SendMessageBackToSender(NetDataWriter writer, NetPeer sender, DeliveryMethod deliveryMethod = DeliveryMethod.ReliableOrdered)      //Data retrieval
+        {
+            Logger.DebugInfo("Reflected a " + (ServerPacket.ServerPacketType)writer.Data[0] + " packet");
+            sender.Send(writer, deliveryMethod);
         }
     }
 }

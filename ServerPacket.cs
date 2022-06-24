@@ -1,6 +1,4 @@
-﻿using Lidgren.Network;
-
-namespace DAGServer
+﻿namespace DAGServer
 {
     public class ServerPacket
     {
@@ -11,16 +9,18 @@ namespace DAGServer
             GiveClientInfo,
             GiveClientCharacterType,
             GiveAllClientData,
-            GiveAllPlayerData,
             GivePlayerDataDeletion,
             GiveClientMovementInformation,
             SendPlayerVariableData,
             PlaySound,
             GiveStringMessageToOtherPlayers,
             SendWorldArrayToAll,
+            SendUpdatedMapObject,
+            SendMapObjectDestruction,
             SendNewEnemyInfo,
             SendNewProjectileInfo,
             SendEnemyVariableData,
+            SendEnemyAilment,
             SendEnemyDeath,
             SendProjectileVariableData,
             SendPlayerUsedItem,
@@ -28,7 +28,10 @@ namespace DAGServer
             SendAllPlayerSpawnDataToOthers,
             SendNewItemCreation,
             SendItemDeletion,
-            ReceiveEnemyListSync
+            ReceiveEnemyListSync,
+            SendRequestedEnemyData,
+            SendEnemyData,
+            SendEnemyDamage
         }
 
         public enum ClientPacketType        //Packets that the clients send
@@ -38,15 +41,17 @@ namespace DAGServer
             SendClientInfo,
             SendClientCharacterType,
             RequestAllClientData,
-            RequestAllPlayerData,
             RequestPlayerDataDeletion,
             SendMovementInformation,
             SendPlayerVariableData,
             SendSound,
             SendStringMessageToOtherPlayers,
             SendWorldArray,
+            SendUpdatedMapObject,
+            SendMapObjectDestruction,
             SendNewEnemyInfo,
             SendEnemyVariableData,
+            SendEnemyAilment,
             SendEnemyDeletion,
             SendNewProjectileInfo,
             SendProjectileVariableData,
@@ -55,7 +60,10 @@ namespace DAGServer
             SendAllPlayerSpawnData,
             SendNewItemCreation,
             SendItemDeletion,
-            SendEnemyListForSync
+            SendEnemyListForSync,
+            RequestEnemyData,
+            SendEnemyData,
+            SendEnemyDamage
         }
     }
 }
