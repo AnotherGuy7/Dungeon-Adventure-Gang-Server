@@ -771,20 +771,20 @@ namespace DAGServer
         }
 
         //Only requests the new data... If we have a network bottle neck we could look here
-        public void HandleEnemyDataRequest(NetPeer sender, NetDataReader reader, byte senderid)
+        public void HandleEnemyDataRequest(NetPeer sender, NetDataReader reader, byte senderID)
         {
             int id = reader.GetInt();
 
             NetDataWriter enemydatamessage = new NetDataWriter();
             enemydatamessage.Put((byte)ServerPacket.ServerPacketType.SendRequestedEnemyData);
-            enemydatamessage.Put(senderid);
+            enemydatamessage.Put(senderID);
             enemydatamessage.Put(id);
 
             SendMessageToAllOthers(enemydatamessage, sender);
         }
 
         //Only sends the new data... If we have a network bottle neck we could look here
-        public void HandleReceivedEnemyData(NetPeer sender, NetDataReader reader, byte senderid)
+        public void HandleReceivedEnemyData(NetPeer sender, NetDataReader reader, byte senderID)
         {
             byte receiverid = reader.GetByte();
             byte enemyType = reader.GetByte();
@@ -793,39 +793,39 @@ namespace DAGServer
             float posX = reader.GetFloat();
             float posY = reader.GetFloat();
 
-            NetDataWriter enemydatamessage = new NetDataWriter();
-            enemydatamessage.Put((byte)ServerPacket.ServerPacketType.SendEnemyData);
-            enemydatamessage.Put(senderid);
-            enemydatamessage.Put(receiverid);
-            enemydatamessage.Put(enemyType);
-            enemydatamessage.Put(id);
-            enemydatamessage.Put(health);
-            enemydatamessage.Put(posX);
-            enemydatamessage.Put(posY);
+            NetDataWriter enemyDataMessage = new NetDataWriter();
+            enemyDataMessage.Put((byte)ServerPacket.ServerPacketType.SendEnemyData);
+            enemyDataMessage.Put(senderID);
+            enemyDataMessage.Put(receiverid);
+            enemyDataMessage.Put(enemyType);
+            enemyDataMessage.Put(id);
+            enemyDataMessage.Put(health);
+            enemyDataMessage.Put(posX);
+            enemyDataMessage.Put(posY);
 
-            SendMessageToAllOthers(enemydatamessage, sender);
+            SendMessageToAllOthers(enemyDataMessage, sender);
         }
 
-        public void HandleReceivedEnemyDamage(NetPeer sender, NetDataReader reader, byte senderid)
+        public void HandleReceivedEnemyDamage(NetPeer sender, NetDataReader reader, byte senderID)
         {
             int id = reader.GetInt();
             int damage = reader.GetInt();
-            float x = reader.GetFloat();
-            float y = reader.GetFloat();
+            int posX = reader.GetInt();
+            int posY = reader.GetInt();
             float knockback = reader.GetFloat();
-            int immunitytimer = reader.GetInt();
+            byte immunitytimer = reader.GetByte();
 
-            NetDataWriter enemydamagemessage = new NetDataWriter();
-            enemydamagemessage.Put((byte)ServerPacket.ServerPacketType.SendEnemyData);
-            enemydamagemessage.Put(senderid);
-            enemydamagemessage.Put(id);
-            enemydamagemessage.Put(damage);
-            enemydamagemessage.Put(x);
-            enemydamagemessage.Put(y);
-            enemydamagemessage.Put(knockback);
-            enemydamagemessage.Put(immunitytimer);
+            NetDataWriter enemyDamageMessage = new NetDataWriter();
+            enemyDamageMessage.Put((byte)ServerPacket.ServerPacketType.SendEnemyDamage);
+            enemyDamageMessage.Put(senderID);
+            enemyDamageMessage.Put(id);
+            enemyDamageMessage.Put(damage);
+            enemyDamageMessage.Put(posX);
+            enemyDamageMessage.Put(posY);
+            enemyDamageMessage.Put(knockback);
+            enemyDamageMessage.Put(immunitytimer);
 
-            SendMessageToAllOthers(enemydamagemessage, sender);
+            SendMessageToAllOthers(enemyDamageMessage, sender);
         }
 
         public static void SendMessageToAllOthers(NetDataWriter writer, NetPeer senderConnection, DeliveryMethod deliveryMethod = DeliveryMethod.ReliableOrdered)       //Data sending
