@@ -504,6 +504,7 @@ namespace DAGServer
             int posY = reader.GetInt();
             byte info1 = reader.GetByte();
             byte info2 = reader.GetByte();
+            bool priorityObject = reader.GetBool();
 
             NetDataWriter mapObjectMessage = new NetDataWriter();
             mapObjectMessage.Put((byte)ServerPacket.ServerPacketType.SendUpdatedMapObject);
@@ -513,6 +514,7 @@ namespace DAGServer
             mapObjectMessage.Put(posY);
             mapObjectMessage.Put(info1);
             mapObjectMessage.Put(info2);
+            mapObjectMessage.Put(priorityObject);
             SendMessageToAllOthers(mapObjectMessage, sender);
         }
 
