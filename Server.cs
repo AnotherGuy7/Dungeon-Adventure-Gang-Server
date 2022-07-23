@@ -462,10 +462,12 @@ namespace DAGServer
                 {
                     byte tileType = reader.GetByte();
                     byte textureType = reader.GetByte();
+                    byte areaID = reader.GetByte();
                     byte generationID = reader.GetByte();
 
                     worldDataMessage.Put(tileType);
                     worldDataMessage.Put(textureType);
+                    worldDataMessage.Put(areaID);
                     worldDataMessage.Put(generationID);
                 }
             }
