@@ -2,14 +2,14 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>netcoreapp3.1</TargetFramework>
+    <TargetFramework>net6.0</TargetFramework>
     <ApplicationIcon>DAGServerIcon.ico</ApplicationIcon>
     <Platforms>AnyCPU;x64;x86</Platforms>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="LiteNetLib" Version="0.9.5.2" />
-    <PackageReference Include="Mono.Nat" Version="3.0.2" />
+    <PackageReference Include="Mono.Nat" Version="3.0.3" />
   </ItemGroup>
 
 </Project>
