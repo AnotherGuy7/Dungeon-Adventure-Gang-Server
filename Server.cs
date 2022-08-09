@@ -453,8 +453,10 @@ namespace DAGServer
 
             int width = reader.GetInt();
             int height = reader.GetInt();
+            byte style = reader.GetByte();
             worldDataMessage.Put(width);
             worldDataMessage.Put(height);
+            worldDataMessage.Put(style);
 
             for (int x = 0; x < width; x++)
             {
