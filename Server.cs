@@ -23,13 +23,11 @@ namespace DAGServer
         public static NetManager serverManager;
         public static EventBasedNetListener serverListener;
         public static Dictionary<int, ClientData> clientData = new Dictionary<int, ClientData>();
-        //public static Dictionary<int, PlayerData> playerData = new Dictionary<int, PlayerData>();
+        public static Dictionary<int, PlayerData> playerData = new Dictionary<int, PlayerData>();
         public static bool gameCurrentlyActive = false;
         public static bool clientConnecting = false;
 
         public static int amountOfConnectedPlayers = 0;
-        public static int[] dungeonEnemies = new int[255];
-        public static int[] gameProjectileExists = new int[1000];
 
         public void CreateNewServer()
         {
@@ -144,6 +142,10 @@ namespace DAGServer
 
                     case ServerPacket.ClientPacketType.RequestAllClientData:
                         HandleAllClientsDataRequest(peer, reader, senderID);
+                        break;
+
+                    case ServerPacket.ClientPacketType.RequestAllPlayerData:
+                        HandleAllPlayersDataRequest(peer, reader, senderID);
                         break;
 
                     case ServerPacket.ClientPacketType.RequestPlayerDataDeletion:
@@ -323,6 +325,25 @@ namespace DAGServer
                 clientDataMessage.Put((byte)clientDataArray[i].clientID);
                 clientDataMessage.Put(clientDataArray[i].clientName);
                 clientDataMessage.Put((byte)clientDataArray[i].chosenCharacterType);
+            }
+
+            SendMessageBackToSender(clientDataMessage, sender);
+        }
+
+        public void HandleAllPlayersDataRequest(NetPeer sender, NetDataReader reader, byte senderID)
+        {
+            NetDataWriter clientDataMessage = new NetDataWriter();
+            clientDataMessage.Put((byte)ServerPacket.ServerPacketType.GiveAllPlayerData);
+            clientDataMessage.Put(senderID);
+            clientDataMessage.Put(playerData.Count);
+
+            PlayerData[] playerDataArray = playerData.Values.ToArray();
+            for (int i = 0; i < playerDataArray.Length; i++)        //The data has to be read by index cause we don't know how many players there are
+            {
+                clientDataMessage.Put(playerDataArray[i].health);
+                clientDataMessage.Put(playerDataArray[i].posX);
+                clientDataMessage.Put(playerDataArray[i].posY);
+                clientDataMessage.Put(playerDataArray[i].chosenCharacterType);
             }
 
             SendMessageBackToSender(clientDataMessage, sender);
@@ -750,8 +771,6 @@ namespace DAGServer
 
             byte amountOfEnemies = reader.GetByte();
             enemySyncMessage.Put(amountOfEnemies);
-
-            dungeonEnemies = new int[amountOfEnemies];
 
             /*for (int i = 0; i < amountOfEnemies; i++)
             {

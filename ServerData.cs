@@ -13,7 +13,10 @@
         {
             public string name;
             public int health;
-            public int playerID;
+            public byte playerID;
+            public byte chosenCharacterType;
+            public int posX;
+            public int posY;
         }
 
         public struct TileData

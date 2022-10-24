@@ -19,8 +19,6 @@ namespace DAGServer
             dagServer = new Server();
             Server.clientData = new System.Collections.Generic.Dictionary<int, ServerData.ClientData>();
             Server.amountOfConnectedPlayers = 0;
-            Server.dungeonEnemies = new int[255];
-            Server.gameProjectileExists = new int[1000];
             Server.gameCurrentlyActive = false;
             Server.clientConnecting = false;
             dagServer.CreateNewServer();
